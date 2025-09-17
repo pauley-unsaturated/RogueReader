@@ -1,0 +1,119 @@
+# Level 8: Ending Blends (CVCC)
+# Late First Grade to Second Grade level
+# Pattern: Consonant + Vowel + Consonant Clusters
+
+# "st" endings
+best
+bust
+cast
+cost
+dust
+fast
+fist
+gust
+just
+last
+list
+lost
+must
+nest
+past
+pest
+post
+rest
+rust
+test
+vast
+west
+zest
+
+# "nd" endings
+band
+bend
+bond
+fond
+hand
+kind
+land
+lend
+mend
+pond
+sand
+send
+tend
+wand
+wind
+
+# "mp" endings
+camp
+damp
+dump
+hump
+jump
+lamp
+limp
+lump
+pump
+ramp
+temp
+
+# "nt" endings
+bent
+cent
+dent
+font
+hint
+hunt
+lint
+mint
+pant
+pint
+punt
+rent
+sent
+tent
+want
+went
+
+# "nk" endings
+bank
+honk
+link
+pink
+rank
+rink
+sank
+sink
+tank
+wink
+
+# "lt" endings
+belt
+bolt
+felt
+halt
+jolt
+melt
+salt
+tilt
+volt
+wilt
+
+# "ft" endings
+deft
+gift
+left
+lift
+loft
+raft
+soft
+
+# "sk" endings
+ask
+desk
+disk
+dusk
+mask
+risk
+task
+tusk

@@ -1,0 +1,44 @@
+# Level 2: CVC Words with "a" and "e" vowels
+# Late Kindergarten level
+# Pattern: Consonant-Vowel-Consonant with "a" and "e"
+
+# "a" words (review)
+cat
+bat
+hat
+mat
+can
+man
+ran
+bad
+bag
+cap
+map
+car
+
+# "e" words (new)
+bed
+red
+fed
+led
+ten
+pen
+hen
+men
+den
+bet
+net
+pet
+set
+wet
+get
+let
+met
+yet
+leg
+peg
+beg
+web
+hen
+gem
+end

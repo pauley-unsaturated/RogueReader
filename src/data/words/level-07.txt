@@ -1,0 +1,117 @@
+# Level 7: Beginning Blends (CCVC)
+# Late First Grade level
+# Pattern: Consonant Blends + Vowel + Consonant
+
+# "bl" blends
+blow
+blue
+bled
+blob
+blot
+
+# "br" blends
+brag
+bred
+brim
+brad
+
+# "cl" blends
+clad
+clam
+clap
+clip
+clod
+clog
+club
+
+# "cr" blends
+crab
+crib
+crop
+crud
+
+# "dr" blends
+drag
+drip
+drop
+drum
+
+# "fl" blends
+flag
+flap
+fled
+flip
+flop
+
+# "fr" blends
+frog
+from
+
+# "gl" blends
+glad
+glen
+
+# "gr" blends
+grab
+grad
+grim
+grip
+
+# "pl" blends
+plan
+plop
+plug
+plus
+
+# "pr" blends
+prep
+prim
+prod
+
+# "sl" blends
+slam
+slap
+sled
+slim
+slip
+slob
+slop
+slug
+
+# "sm" blends
+smog
+
+# "sn" blends
+snap
+snag
+snip
+snob
+snug
+
+# "sp" blends
+span
+spin
+spit
+spot
+spud
+
+# "st" blends
+stab
+stem
+step
+stir
+stop
+stub
+stud
+stun
+
+# "sw" blends
+swam
+swim
+
+# "tr" blends
+trap
+trim
+trip
+trod
+trot

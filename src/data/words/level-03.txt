@@ -1,0 +1,51 @@
+# Level 3: CVC Words with "a", "e", and "i" vowels
+# Kindergarten level
+# Pattern: Consonant-Vowel-Consonant with "a", "e", and "i"
+
+# "a" and "e" words (review)
+cat
+bed
+hat
+red
+can
+ten
+bad
+pet
+bag
+leg
+map
+net
+
+# "i" words (new)
+big
+dig
+fig
+pig
+wig
+bit
+fit
+hit
+kit
+lit
+pit
+sit
+wit
+bin
+fin
+pin
+sin
+tin
+win
+bid
+hid
+kid
+lid
+rid
+dip
+hip
+lip
+nip
+rip
+sip
+tip
+zip
