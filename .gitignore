@@ -40,6 +40,9 @@ __pycache__/
 # Claude artifacts
 .claude/
 
+# API Keys
+.env
+
 # Temporary sprite processing files
 improved_sprite_processor.py
 process_sprite.py
