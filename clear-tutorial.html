@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Tutorial Status</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #2c3e50;
+            color: white;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 10px;
+            cursor: pointer;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>RogueReader Tutorial Reset</h1>
+
+    <div class="status">
+        <p>Tutorial Status: <span id="status">Checking...</span></p>
+        <p>Has Played: <span id="played">Checking...</span></p>
+    </div>
+
+    <button onclick="clearTutorial()">Reset Tutorial (Show on next game start)</button>
+    <button onclick="markAsCompleted()">Mark Tutorial as Completed</button>
+    <button onclick="clearAll()">Clear All Game Data</button>
+    <button onclick="checkStatus()">Refresh Status</button>
+
+    <script>
+        function checkStatus() {
+            const tutorialCompleted = localStorage.getItem('roguereader_tutorial_completed');
+            const hasPlayed = localStorage.getItem('roguereader_has_played');
+
+            document.getElementById('status').textContent = tutorialCompleted ? 'Completed' : 'Not completed';
+            document.getElementById('played').textContent = hasPlayed ? 'Yes' : 'No';
+        }
+
+        function clearTutorial() {
+            localStorage.removeItem('roguereader_tutorial_completed');
+            alert('Tutorial will show on next game start!');
+            checkStatus();
+        }
+
+        function markAsCompleted() {
+            localStorage.setItem('roguereader_tutorial_completed', 'true');
+            alert('Tutorial marked as completed!');
+            checkStatus();
+        }
+
+        function clearAll() {
+            if (confirm('This will clear all game data. Are you sure?')) {
+                localStorage.removeItem('roguereader_tutorial_completed');
+                localStorage.removeItem('roguereader_has_played');
+                localStorage.removeItem('spellspeakers_word_progress');
+                alert('All game data cleared!');
+                checkStatus();
+            }
+        }
+
+        // Check status on load
+        checkStatus();
+    </script>
+</body>
+</html>

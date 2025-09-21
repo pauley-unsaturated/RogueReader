@@ -169,4 +169,8 @@ export class Player extends Phaser.GameObjects.Sprite {
   restoreMana(amount: number): void {
     this.mana = Math.min(GAME_CONFIG.COMBAT.BASE_PLAYER_MANA, this.mana + amount)
   }
+
+  getGridPosition(): { x: number; y: number } {
+    return { x: this.gridX, y: this.gridY }
+  }
 }

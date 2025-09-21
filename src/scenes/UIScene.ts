@@ -3,9 +3,7 @@ import { Room } from '@/systems/DungeonGenerator'
 
 export class UIScene extends Phaser.Scene {
   private healthBar!: Phaser.GameObjects.Rectangle
-  private healthBarBg!: Phaser.GameObjects.Rectangle
   private manaBar!: Phaser.GameObjects.Rectangle
-  private manaBarBg!: Phaser.GameObjects.Rectangle
   private healthText!: Phaser.GameObjects.Text
   private manaText!: Phaser.GameObjects.Text
   private spellModal!: Phaser.GameObjects.Container
@@ -25,7 +23,7 @@ export class UIScene extends Phaser.Scene {
     const { width, height } = this.cameras.main
     
     // Health bar
-    this.healthBarBg = this.add.rectangle(100, height - 50, 200, 20, 0x7f8c8d)
+    this.add.rectangle(100, height - 50, 200, 20, 0x7f8c8d)
     this.healthBar = this.add.rectangle(100, height - 50, 200, 20, 0xe74c3c)
     this.healthText = this.add.text(20, height - 60, 'HP: 100/100', {
       fontSize: '14px',
@@ -33,7 +31,7 @@ export class UIScene extends Phaser.Scene {
     })
 
     // Mana bar
-    this.manaBarBg = this.add.rectangle(100, height - 25, 200, 20, 0x7f8c8d)
+    this.add.rectangle(100, height - 25, 200, 20, 0x7f8c8d)
     this.manaBar = this.add.rectangle(100, height - 25, 200, 20, 0x3498db)
     this.manaText = this.add.text(20, height - 35, 'MP: 50/50', {
       fontSize: '14px',
@@ -146,7 +144,7 @@ export class UIScene extends Phaser.Scene {
     }
   }
 
-  private showMessage(text: string, color: number = 0xffffff): void {
+  private showMessage(text: string, _color: number = 0xffffff): void {
     const { width } = this.cameras.main
     
     const messageText = this.add.text(width / 2, 100, text, {

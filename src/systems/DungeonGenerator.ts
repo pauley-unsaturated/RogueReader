@@ -96,7 +96,7 @@ export class DungeonGenerator {
     return rooms
   }
 
-  private getRoomType(roomIndex: number, totalRooms: number, floor: number): Room['type'] {
+  private getRoomType(roomIndex: number, totalRooms: number, _floor: number): Room['type'] {
     if (roomIndex === 0) return 'combat' // Start room
     if (roomIndex === totalRooms - 1) return 'boss' // Final room
     

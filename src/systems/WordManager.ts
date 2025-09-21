@@ -15,14 +15,23 @@ export class WordManager {
   private loadPromises: Map<number, Promise<string[]>> = new Map()
 
   constructor() {
+    this.initializeFallbackWords()
     this.initializeWordData()
+  }
+
+  private initializeFallbackWords(): void {
+    // Initialize with fallback words immediately for levels 1-5
+    for (let level = 1; level <= 5; level++) {
+      this.wordsByLevel.set(level, this.getFallbackWords(level))
+    }
   }
 
   private async initializeWordData(): Promise<void> {
     // Pre-load the first few levels for immediate gameplay
-    await this.loadWordsForLevel(1)
-    await this.loadWordsForLevel(2)
-    await this.loadWordsForLevel(3)
+    // These will override the fallback words if files exist
+    this.loadWordsForLevel(1)
+    this.loadWordsForLevel(2)
+    this.loadWordsForLevel(3)
   }
 
   public async loadWordsForLevel(level: number): Promise<string[]> {
@@ -70,18 +79,32 @@ export class WordManager {
   private getFallbackWords(level: number): string[] {
     // Provide basic fallback words if file loading fails
     const fallbacks: Record<number, string[]> = {
-      1: ['cat', 'bat', 'hat', 'mat', 'can', 'man', 'ran', 'bad', 'bag', 'cap'],
-      2: ['bed', 'red', 'ten', 'pen', 'net', 'pet', 'get', 'let', 'wet', 'yes'],
-      3: ['big', 'dig', 'pig', 'bit', 'sit', 'hit', 'pin', 'win', 'bin', 'fin'],
-      4: ['the', 'and', 'you', 'that', 'was', 'for', 'are', 'with', 'his', 'they'],
-      5: ['have', 'this', 'will', 'your', 'from', 'they', 'know', 'want', 'been', 'good']
+      1: ['cat', 'bat', 'hat', 'mat', 'rat', 'sat', 'fat', 'pat',
+          'can', 'man', 'pan', 'ran', 'fan', 'van', 'tan',
+          'bad', 'dad', 'had', 'mad', 'sad', 'lad',
+          'bag', 'tag', 'rag', 'wag', 'lag',
+          'cap', 'map', 'lap', 'tap', 'nap', 'gap'],
+      2: ['bed', 'red', 'fed', 'led', 'wed',
+          'ten', 'pen', 'hen', 'men', 'den',
+          'net', 'pet', 'get', 'let', 'wet', 'met', 'set', 'bet',
+          'big', 'dig', 'pig', 'wig', 'fig',
+          'hot', 'pot', 'got', 'lot', 'dot', 'not'],
+      3: ['sit', 'hit', 'bit', 'fit', 'kit', 'lit', 'pit', 'wit',
+          'pin', 'win', 'bin', 'fin', 'tin', 'sin',
+          'hop', 'top', 'pop', 'mop', 'cop',
+          'bug', 'hug', 'jug', 'mug', 'rug', 'tug',
+          'sun', 'run', 'fun', 'bun', 'gun'],
+      4: ['the', 'and', 'you', 'that', 'was', 'for', 'are', 'with', 'his', 'they',
+          'from', 'have', 'this', 'word', 'what', 'some', 'were', 'when', 'your', 'said'],
+      5: ['about', 'after', 'again', 'could', 'every', 'first', 'found', 'great', 'house', 'large',
+          'place', 'right', 'small', 'sound', 'still', 'think', 'three', 'under', 'water', 'where']
     }
 
     return fallbacks[level] || fallbacks[1]
   }
 
   // Get appropriate words based on player's reading level and spaced repetition
-  public async getWordsForSpell(playerLevel: number, spellType: 'attack' | 'defense' | 'unlock' | 'heal', count: number = 1): Promise<string[]> {
+  public async getWordsForSpell(playerLevel: number, _spellType: 'attack' | 'defense' | 'unlock' | 'heal', count: number = 1): Promise<string[]> {
     const level = Math.min(playerLevel, 20)
     await this.loadWordsForLevel(level)
 
@@ -135,7 +158,7 @@ export class WordManager {
     return reviewWords
   }
 
-  private getNewWords(level: number, levelWords: string[]): string[] {
+  private getNewWords(_level: number, levelWords: string[]): string[] {
     return levelWords.filter(word => !this.playerWordHistory.has(word))
   }
 
@@ -205,6 +228,31 @@ export class WordManager {
     }
   }
 
+  // Select a single word for a given level
+  public selectWordForLevel(level: number): WordData | null {
+    const levelWords = this.wordsByLevel.get(level) || this.getFallbackWords(level)
+    if (levelWords.length === 0) return null
+
+    // Pick a random word for now
+    const word = levelWords[Math.floor(Math.random() * levelWords.length)]
+
+    // Get or create word data
+    if (!this.playerWordHistory.has(word)) {
+      this.playerWordHistory.set(word, {
+        word,
+        level,
+        attempts: 0,
+        successes: 0,
+        lastSeen: new Date(),
+        nextReview: new Date(),
+        easeFactor: 2.5,
+        interval: 1
+      })
+    }
+
+    return this.playerWordHistory.get(word)!
+  }
+
   // Get player's mastery statistics
   public getPlayerStats(level?: number): {
     totalWords: number
@@ -218,7 +266,7 @@ export class WordManager {
     let totalSuccesses = 0
     let totalResponseTime = 0
 
-    for (const [word, data] of this.playerWordHistory) {
+    for (const [, data] of this.playerWordHistory) {
       if (level === undefined || data.level === level) {
         totalWords++
         totalAttempts += data.attempts
