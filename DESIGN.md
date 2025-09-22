@@ -224,6 +224,63 @@ Advanced SAT-style mechanics will be implemented once core systems are proven an
 - **Celebration Moments**: Big visual/audio rewards for reading achievements
 - **No Timers on Learning**: Combat has time pressure, but learning new words doesn't
 
+## Accessibility & Progression Mechanics
+
+### Timer vs. Tries System (Grade-Based)
+
+**Early Levels (K-2nd Grade)**: No Timer, Uses Try-Based System
+- Players get 3 attempts per word initially
+- Focus is on accuracy and learning, not speed
+- Reduces anxiety for beginning readers
+- Encourages experimentation without time pressure
+- **Combat Paused**: Enemies cannot attack during spell casting dialog
+
+**Mid Levels (3rd-4th Grade)**: Hybrid System
+- Short timer (8-10 seconds) OR 2 tries, whichever comes first
+- Introduces mild time pressure while maintaining safety net
+- Builds reading fluency gradually
+- **Combat Paused**: Enemies cannot attack during spell casting dialog
+
+**Advanced Levels (5th+ Grade)**: Timer-Based System
+- Standard 5-7 second timer for grade-level words
+- Encourages reading fluency and quick recognition
+- Mimics real-world reading speed expectations
+- **Real-Time Combat**: Enemies continue attacking (adds strategic pressure)
+
+### Combat Fairness Mechanics
+
+**Grades K-4: Safe Casting Mode**
+- Combat completely pauses when spell dialog appears
+- Enemies freeze in place, attack timers pause
+- Player can focus entirely on reading without distraction
+- Removes unfair deaths from reading time
+- Educational focus over gameplay challenge
+
+**Grades 5+: Strategic Casting Mode**
+- Enemies continue their attack patterns during casting
+- Players must balance reading speed with defensive positioning
+- Adds strategic depth for advanced players
+- Mimics real-time decision making
+
+### Mana Point (MP) Scaling System
+
+**MP as Universal Enhancement Resource**
+- **Timer Extension**: Spend MP to add 2-3 seconds to spell timer
+- **Extra Tries**: Spend MP to gain additional attempts (1 MP = 1 extra try)
+- **Scaling Cost**: Higher grade levels cost more MP for same benefit
+- **Strategic Resource**: Creates meaningful choice between spell power and accessibility
+
+**MP Cost Examples**:
+- K-2nd Grade: 1 MP = +1 extra try
+- 3rd-5th Grade: 2 MP = +3 seconds timer OR +1 try
+- 6th+ Grade: 3 MP = +2 seconds timer OR +1 try
+
+**Design Benefits**:
+- Allows players to adapt difficulty to their current ability
+- Provides progression path for players who struggle with speed
+- Creates strategic depth in resource management
+- Maintains challenge while offering accessibility options
+
 ## Audio Design (To Be Implemented)
 
 ### Music System
@@ -299,7 +356,12 @@ Advanced SAT-style mechanics will be implemented once core systems are proven an
 
 ### 🚧 Next Implementation Priority
 
-1. **Speech Recognition Integration** (Highest Priority)
+1. **Combat Fairness System** (Critical Fix)
+   - Pause enemy attacks during spell dialog for grades K-4
+   - Implement grade-level detection for combat behavior
+   - Prevent unfair deaths during reading time
+
+2. **Speech Recognition Integration** (Highest Priority)
    - Whisper API for spell casting
    - Real-time pronunciation feedback
    - Microphone UI indicators

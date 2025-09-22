@@ -19,21 +19,27 @@ export class UIScene extends Phaser.Scene {
   private createHUD(): void {
     const { width, height } = this.cameras.main
     
-    // Health bar
-    this.add.rectangle(100, height - 50, 200, 20, 0x7f8c8d)
+    // Health bar (floats above spell dialogs)
+    const healthBarBg = this.add.rectangle(100, height - 50, 200, 20, 0x7f8c8d)
+    healthBarBg.setDepth(1100)
     this.healthBar = this.add.rectangle(100, height - 50, 200, 20, 0xe74c3c)
+    this.healthBar.setDepth(1100)
     this.healthText = this.add.text(20, height - 60, 'HP: 100/100', {
       fontSize: '14px',
       color: '#ffffff'
     })
+    this.healthText.setDepth(1100)
 
-    // Mana bar
-    this.add.rectangle(100, height - 25, 200, 20, 0x7f8c8d)
+    // Mana bar (floats above spell dialogs)
+    const manaBarBg = this.add.rectangle(100, height - 25, 200, 20, 0x7f8c8d)
+    manaBarBg.setDepth(1100)
     this.manaBar = this.add.rectangle(100, height - 25, 200, 20, 0x3498db)
+    this.manaBar.setDepth(1100)
     this.manaText = this.add.text(20, height - 35, 'MP: 50/50', {
       fontSize: '14px',
       color: '#ffffff'
     })
+    this.manaText.setDepth(1100)
 
     // Instructions
     this.add.text(width - 20, height - 60, 'Arrow Keys: Move • Space: Interact • N: Next Floor', {
@@ -62,9 +68,8 @@ export class UIScene extends Phaser.Scene {
   private handleRoomEntered(room: Room): void {
     switch (room.type) {
       case 'combat':
-        this.showMessage(`Entered ${room.type} room! Enemies await!`, 0xe74c3c)
-        // Old modal disabled - using new CastingDialog in GameScene
-        // this.openSpellModal('FIRE', 'Attack the enemies!')
+        // Combat handled by GameScene's CastingDialog system
+        // No message needed here as the casting dialog provides all UI
         break
       case 'treasure':
         this.showMessage(`Treasure room discovered!`, 0xf1c40f)

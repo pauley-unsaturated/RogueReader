@@ -33,6 +33,9 @@ export class GameScene extends Phaser.Scene {
   private pronunciationHelp: PronunciationHelpService | null = null
   private isListeningForSpeech: boolean = false
   private isGamePaused: boolean = false
+  private recordingEndTimer: Phaser.Time.TimerEvent | null = null
+  private isSpaceKeyDown: boolean = false // Track actual key state to prevent auto-repeat spam
+  private escapeKeyPressed: boolean = false // Prevent ESC spam
 
   constructor() {
     super({ key: 'GameScene' })
@@ -50,6 +53,7 @@ export class GameScene extends Phaser.Scene {
     this.isInCombat = false
     this.currentWord = null
     this.currentFloor = this.currentFloor || 1
+    this.isSpaceKeyDown = false
     this.enemies = []
     this.tiles = []
 
@@ -185,6 +189,14 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.player = new Player(this, startPos.x, startPos.y)
+
+    // Forward player stat events to UIScene
+    this.events.on('update-health', (current: number, max: number) => {
+      this.scene.get('UIScene').events.emit('update-health', current, max)
+    })
+    this.events.on('update-mana', (current: number, max: number) => {
+      this.scene.get('UIScene').events.emit('update-mana', current, max)
+    })
   }
 
   private setupCamera(): void {
@@ -209,39 +221,137 @@ export class GameScene extends Phaser.Scene {
 
     // Movement input with explicit logging
     this.input.keyboard!.on('keydown-UP', () => {
+      if (this.isGameOver) return
       console.log('UP arrow pressed!')
       this.movePlayer(0, -1)
     })
     this.input.keyboard!.on('keydown-DOWN', () => {
+      if (this.isGameOver) return
       console.log('DOWN arrow pressed!')
       this.movePlayer(0, 1)
     })
     this.input.keyboard!.on('keydown-LEFT', () => {
+      if (this.isGameOver) return
       console.log('LEFT arrow pressed!')
       this.movePlayer(-1, 0)
     })
     this.input.keyboard!.on('keydown-RIGHT', () => {
+      if (this.isGameOver) return
       console.log('RIGHT arrow pressed!')
       this.movePlayer(1, 0)
     })
 
-    // Interaction and speech casting
+    // Hold-to-record pattern for spell casting
     this.input.keyboard!.on('keydown-SPACE', () => {
-      console.log('SPACE pressed!')
+      // Don't process spacebar if game is over
+      if (this.isGameOver) return
 
-      // If dialog is open and recording, stop and process
-      if (this.castingDialog && this.castingDialog.isRecordingActive()) {
-        // Stop recording and process
-        this.stopRecordingAndProcess()
-      } else if (this.castingDialog && !this.castingDialog.isRecordingActive()) {
-        // Dialog open but not recording - do nothing (processing or showing result)
-        console.log('⏳ Still processing previous word...')
-      } else if (this.isInCombat) {
-        // Open dialog (will auto-start recording)
-        this.showCastingDialog()
+      // Ignore auto-repeat events when key is already down
+      if (this.isSpaceKeyDown) {
+        // console.log('🔁 Ignoring spacebar auto-repeat')
+        return
+      }
+
+      this.isSpaceKeyDown = true
+      console.log('SPACE pressed (down)!')
+
+      // Cancel any pending recording end delay if user presses spacebar again
+      if (this.recordingEndTimer) {
+        console.log('📟 Cancelling recording end delay - user pressed spacebar again')
+        this.recordingEndTimer.destroy()
+        this.recordingEndTimer = null
+      }
+
+      if (this.isInCombat) {
+        if (this.castingDialog) {
+          // Start recording if dialog is open and not already recording
+          if (!this.castingDialog.isRecordingActive() && !this.isListeningForSpeech) {
+            console.log('🎤 Starting recording via spacebar hold')
+            this.startRecordingForWord()
+          } else {
+            console.log(`🚫 Cannot start recording: isRecording=${this.castingDialog.isRecordingActive()}, isListening=${this.isListeningForSpeech}`)
+          }
+        } else {
+          // Open dialog
+          console.log(`📜 Attempting to open casting dialog from spacebar: hasDialog=${!!this.castingDialog}`)
+          this.showCastingDialog()
+        }
       } else {
         // Non-combat interaction
         this.interact()
+      }
+    })
+
+    // Release spacebar to stop recording and process
+    this.input.keyboard!.on('keyup-SPACE', () => {
+      // Don't process spacebar if game is over
+      if (this.isGameOver) return
+
+      if (!this.isSpaceKeyDown) {
+        // This shouldn't happen, but just in case
+        console.log('🤔 Got keyup without keydown - ignoring')
+        return
+      }
+
+      this.isSpaceKeyDown = false
+      console.log('SPACE released (up)!')
+
+      if (this.castingDialog && this.castingDialog.isRecordingActive()) {
+        console.log('🛑 Spacebar released - starting tail capture delay')
+        this.startRecordingEndDelay()
+      } else {
+        console.log(`🚷 Spacebar released but no action: hasDialog=${!!this.castingDialog}, isRecording=${this.castingDialog?.isRecordingActive()}`)
+      }
+    })
+
+    // Escape or Shift key to exit casting dialog
+    this.input.keyboard!.on('keydown-ESC', () => {
+      // Don't process ESC if game is over
+      if (this.isGameOver) return
+
+      // Prevent ESC spam
+      if (this.escapeKeyPressed) {
+        console.log('🔁 Ignoring repeated ESC press')
+        return
+      }
+      this.escapeKeyPressed = true
+
+      console.log('ESC pressed - closing dialog')
+      if (this.castingDialog) {
+        console.log('🚪 EMERGENCY CLOSE: Force closing dialog via ESC')
+
+        // Cancel any pending timers immediately
+        if (this.recordingEndTimer) {
+          this.recordingEndTimer.destroy()
+          this.recordingEndTimer = null
+        }
+
+        // Force close regardless of state
+        this.closeCastingDialog()
+      }
+
+      // Reset ESC flag after brief delay
+      this.time.delayedCall(500, () => {
+        this.escapeKeyPressed = false
+      })
+    })
+
+    this.input.keyboard!.on('keydown-SHIFT', () => {
+      // Don't process SHIFT if game is over
+      if (this.isGameOver) return
+
+      console.log('SHIFT pressed - closing dialog')
+      if (this.castingDialog) {
+        console.log('🚪 EMERGENCY CLOSE: Force closing dialog via SHIFT')
+
+        // Cancel any pending timers immediately
+        if (this.recordingEndTimer) {
+          this.recordingEndTimer.destroy()
+          this.recordingEndTimer = null
+        }
+
+        // Force close regardless of state
+        this.closeCastingDialog()
       }
     })
 
@@ -341,6 +451,12 @@ export class GameScene extends Phaser.Scene {
     this.combatSystem.on('combatEnded', (data: any) => {
       this.isInCombat = false
       this.hideCombatPrompt()
+
+      // Restore some mana after combat
+      const manaRestore = Math.floor(this.player.maxMana * 0.25) // 25% of max mana
+      this.player.restoreMana(manaRestore)
+      console.log(`💙 Restored ${manaRestore} mana after combat`)
+
       if (data.maxCombo > 0) {
         this.showReward(data.bonusReward, 'Combo Bonus!')
       }
@@ -467,6 +583,22 @@ export class GameScene extends Phaser.Scene {
       console.log('🎯 Speech modifiers:', speechModifiers)
     }
 
+    // Calculate mana cost based on word complexity
+    const complexity = this.combatSystem['calculateWordComplexity'](word)
+    const manaCost = Math.max(1, Math.floor(complexity * 2)) // 2-10 mana per spell
+
+    console.log(`💙 Spell mana cost: ${manaCost} (player has ${this.player.mana}/${this.player.maxMana})`)
+
+    // Check if player has enough mana
+    if (this.player.mana < manaCost) {
+      console.log('❌ Not enough mana to cast spell!')
+      // Could show "Out of Mana" message here
+      return
+    }
+
+    // Consume mana before casting
+    this.player.useMana(manaCost)
+
     // Cast the spell with speech results
     console.log('⚡ Calling combatSystem.castSpell...')
     const spell = this.combatSystem.castSpell(word, undefined, speechModifiers)
@@ -478,8 +610,7 @@ export class GameScene extends Phaser.Scene {
       this.combatUI.showCriticalHit()
     }
 
-    // Show complexity bonus
-    const complexity = this.combatSystem['calculateWordComplexity'](word)
+    // Show complexity bonus (reuse complexity from mana calculation)
     this.combatUI.showWordComplexity(word, complexity)
 
     // Record word attempt for spaced repetition
@@ -487,17 +618,62 @@ export class GameScene extends Phaser.Scene {
     const success = !speechResult?.isError && !speechResult?.isTimeout
     this.wordManager.recordWordAttempt(word, this.currentFloor, success, readTime)
 
-    // Get next word if still in combat
+    // Note: Don't auto-show dialog here - let the timer-based system handle it
+    // This prevents double-dialogs and lets the combo system work properly
     if (this.isInCombat) {
-      console.log('🔄 Still in combat, showing next prompt')
-      this.showCombatPrompt()
+      console.log('🔄 Still in combat - dialog will be managed by combo system')
     } else {
       console.log('✅ Combat ended')
     }
   }
 
+  private cleanupCastingDialog(): void {
+    console.log('🧹 Cleaning up casting dialog')
+
+    // Stop any active recording and timers
+    if (this.recordingEndTimer) {
+      this.recordingEndTimer.destroy()
+      this.recordingEndTimer = null
+    }
+
+    if (this.streamingService) {
+      this.streamingService.stopStreaming()
+    }
+
+    // Reset all related state
+    this.isListeningForSpeech = false
+    this.comboWords = []
+    this.pendingComboResults = []
+    this.currentWord = null
+    this.isSpaceKeyDown = false
+    this.escapeKeyPressed = false
+
+    // Clear dialog reference (dialog handles its own destruction)
+    this.castingDialog = null
+  }
+
+  private closeCastingDialog(): void {
+    if (this.castingDialog) {
+      console.log('🚪 Manually closing casting dialog')
+      // Immediately clean up without waiting for animation
+      this.castingDialog.destroy()
+      this.cleanupCastingDialog()
+    }
+  }
+
   private showCastingDialog(): void {
-    if (this.castingDialog || !this.isInCombat) return
+    // Simple guard: only create if no dialog exists and we're in combat
+    if (this.castingDialog) {
+      console.log(`🚫 Dialog already exists - cannot create another`)
+      return
+    }
+
+    if (!this.isInCombat) {
+      console.log(`🚫 Not in combat - cannot create dialog`)
+      return
+    }
+
+    console.log(`📜 Creating new casting dialog`)
 
     // Get initial word for the spell
     const wordData = this.wordManager.selectWordForLevel(this.currentFloor)
@@ -520,21 +696,53 @@ export class GameScene extends Phaser.Scene {
       duration: 10000, // 10 second timer (gives more time for API responses)
       onTimerEnd: (results) => this.handleComboComplete(results),
       onClose: () => {
-        this.streamingService?.stopStreaming()
-        this.castingDialog = null
-        this.isListeningForSpeech = false
+        // Use centralized cleanup
+        this.cleanupCastingDialog()
       }
     })
 
     this.castingDialog.show(wordData.word)
 
-    // IMMEDIATELY start recording
-    this.startRecordingForWord()
+    // Check if spacebar is already being held down
+    if (this.isSpaceKeyDown) {
+      console.log('🎤 Spacebar already held - starting recording immediately')
+      // Start recording immediately without delay
+      this.startRecordingForWord()
+    } else {
+      // Wait for spacebar to be pressed
+      this.castingDialog.setRecordingState('ready')
+    }
+
+    // Dialog is fully created and shown
+    console.log('✅ Dialog creation complete')
   }
 
   private getRandomSpellName(): string {
     const spellNames = ['Fireball', 'Ice Shard', 'Lightning Bolt', 'Magic Missile', 'Arcane Blast']
     return spellNames[Math.floor(Math.random() * spellNames.length)]
+  }
+
+  private startRecordingEndDelay(): void {
+    // Cancel any existing timer
+    if (this.recordingEndTimer) {
+      this.recordingEndTimer.destroy()
+    }
+
+    // Update UI to show we're capturing the tail end
+    if (this.castingDialog) {
+      this.castingDialog.setRecordingState('processing')
+    }
+
+    // Smart delay: long enough to capture word endings, short enough to feel responsive
+    // 400ms is a good balance - captures most trailing consonants without feeling sluggish
+    const tailCaptureDelay = 400
+    console.log(`🎤 Starting ${tailCaptureDelay}ms tail capture delay...`)
+
+    this.recordingEndTimer = this.time.delayedCall(tailCaptureDelay, () => {
+      console.log('⚙️ Tail capture complete - processing recording')
+      this.recordingEndTimer = null
+      this.stopRecordingAndProcess()
+    })
   }
 
   private startRecordingForWord(): void {
@@ -587,7 +795,18 @@ export class GameScene extends Phaser.Scene {
       // Get the audio blob from streaming service
       const audioBlob = await this.streamingService?.getRecordedAudio()
       if (!audioBlob) {
-        this.castingDialog?.handleWordError()
+        console.log('⚠️ No audio recorded - this might be a browser/microphone issue')
+        if (this.castingDialog) {
+          this.castingDialog.handleWordError()
+          // Show more helpful message for audio issues
+          this.castingDialog.setRecordingState('error')
+          // Return to ready state after error delay
+          this.time.delayedCall(2000, () => {
+            if (this.castingDialog) {
+              this.castingDialog.setRecordingState('ready')
+            }
+          })
+        }
         this.isListeningForSpeech = false
         return
       }
@@ -597,7 +816,15 @@ export class GameScene extends Phaser.Scene {
       this.handleDialogSpeechResult(result)
     } catch (error) {
       console.error('Processing error:', error)
-      this.castingDialog?.handleWordError()
+      if (this.castingDialog) {
+        this.castingDialog.handleWordError()
+        // Return to ready state after error delay
+        this.time.delayedCall(1500, () => {
+          if (this.castingDialog) {
+            this.castingDialog.setRecordingState('ready')
+          }
+        })
+      }
       this.isListeningForSpeech = false
     }
   }
@@ -692,26 +919,44 @@ export class GameScene extends Phaser.Scene {
         this.currentWord = nextWordData.word
         this.castingDialog.setNextWord(nextWordData.word)
 
-        // IMMEDIATELY start recording the next word
-        this.startRecordingForWord()
+        // Don't auto-start recording - wait for spacebar
+        this.castingDialog.setRecordingState('ready')
       }
     } else {
       // Failed - show error state
       this.castingDialog.handleWordError()
 
-      // Auto-restart recording after brief delay
-      this.time.delayedCall(1500, () => {
-        if (this.castingDialog && this.currentWord) {
-          this.startRecordingForWord()
+      // Don't auto-restart - wait for spacebar to be pressed again
+      this.time.delayedCall(500, () => {
+        if (this.castingDialog) {
+          this.castingDialog.setRecordingState('ready')
         }
       })
     }
   }
 
-  private handleComboComplete(results: SpeechRecognitionResult[]): void {
+  private async handleComboComplete(results: SpeechRecognitionResult[]): Promise<void> {
     console.log('⏰ Timer complete! Combo results:', results)
 
-    // Stop any ongoing streaming
+    // If still recording when timer ends, process the current recording first
+    if (this.castingDialog && this.castingDialog.isRecordingActive() && this.isListeningForSpeech) {
+      console.log('📼 Processing pending recording before timer completion...')
+      await this.stopRecordingAndProcess()
+
+      // Wait a moment for the result to be processed
+      await this.delay(500)
+
+      // Add the final result if we have it
+      if (this.pendingComboResults.length > results.length) {
+        results = [...this.pendingComboResults]
+      }
+    }
+
+    // Stop any ongoing streaming and timers
+    if (this.recordingEndTimer) {
+      this.recordingEndTimer.destroy()
+      this.recordingEndTimer = null
+    }
     this.streamingService?.stopStreaming()
 
     if (results.length === 0) {
@@ -744,11 +989,12 @@ export class GameScene extends Phaser.Scene {
       })
     }
 
-    // Clean up
-    this.castingDialog = null
-    this.comboWords = []
-    this.pendingComboResults = []
-    this.currentWord = null
+    // Use centralized cleanup
+    this.cleanupCastingDialog()
+
+    // Timer complete - let player press spacebar when ready for next spell
+    // No automatic dialog recreation to prevent race conditions
+    console.log('✅ Spell timer complete - waiting for player to press spacebar for next spell')
   }
 
   // Removed old handleSpeechResult - now handled by handleDialogSpeechResult
@@ -1062,12 +1308,48 @@ export class GameScene extends Phaser.Scene {
   }
 
   private gameOver(): void {
-    // Don't pause the scene - just stop game logic
+    // Prevent multiple game over triggers
+    if (this.isGameOver) {
+      console.log('🚫 Game over already triggered - ignoring duplicate call')
+      return
+    }
+
+    console.log('💀 GAME OVER triggered')
     this.isGameOver = true
     this.isInCombat = false
 
-    // Stop all enemy actions
-    this.enemies.forEach(enemy => enemy.stopCombat())
+    // Stop all timers and active processes
+    if (this.recordingEndTimer) {
+      this.recordingEndTimer.destroy()
+      this.recordingEndTimer = null
+    }
+
+    // Force close any open dialog
+    if (this.castingDialog) {
+      this.castingDialog.destroy()
+      this.cleanupCastingDialog()
+    }
+
+    // Stop streaming service
+    if (this.streamingService) {
+      this.streamingService.stopStreaming()
+    }
+
+    // Stop all enemy actions and movement
+    this.enemies.forEach(enemy => {
+      enemy.stopCombat()
+      // Stop any enemy tweens/animations
+      this.tweens.killTweensOf(enemy)
+    })
+
+    // Stop all tweens in the scene
+    this.tweens.killAll()
+
+    // Clear any existing game over UI
+    const existingGameOver = this.children.getByName('gameOverText')
+    const existingRestart = this.children.getByName('restartText')
+    if (existingGameOver) existingGameOver.destroy()
+    if (existingRestart) existingRestart.destroy()
 
     const gameOverText = this.add.text(400, 300, 'GAME OVER', {
       fontSize: '48px',
@@ -1078,6 +1360,7 @@ export class GameScene extends Phaser.Scene {
     gameOverText.setOrigin(0.5)
     gameOverText.setScrollFactor(0)
     gameOverText.setDepth(200)
+    gameOverText.setName('gameOverText')
 
     const restartText = this.add.text(400, 350, 'Press R to restart • Click to restart', {
       fontSize: '24px',
@@ -1088,6 +1371,7 @@ export class GameScene extends Phaser.Scene {
     restartText.setOrigin(0.5)
     restartText.setScrollFactor(0)
     restartText.setDepth(200)
+    restartText.setName('restartText')
 
     // Also handle lowercase 'r'
     const handleRestart = () => {
@@ -1103,6 +1387,7 @@ export class GameScene extends Phaser.Scene {
       this.isGameOver = false
       this.isInCombat = false
       this.currentWord = null
+      this.isSpaceKeyDown = false
 
       // Restart the scene completely
       this.scene.restart()

@@ -122,7 +122,7 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     this.add(this.recordingBar);
 
     // Instructions
-    this.instructionText = this.scene.add.text(0, 150, 'Press SPACE when done speaking', {
+    this.instructionText = this.scene.add.text(0, 150, 'Hold SPACE to record • SHIFT/ESC to exit', {
       fontSize: '16px',
       color: '#aaaaaa',
       fontFamily: 'Arial'
@@ -164,7 +164,7 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     this.setRecordingState('ready');
 
     // Update instruction
-    this.instructionText.setText('Recording starting...');
+    this.instructionText.setText('Hold SPACE to record');
   }
 
   private startTimer(): void {
@@ -178,12 +178,13 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     this.timerBar.lineStyle(2, 0xffffff);
     this.timerBar.strokeRect(-barWidth / 2, 0, barWidth, barHeight);
 
-    // Animate timer countdown
+    // Timer starts paused - only counts down during recording
     this.timerTween = this.scene.tweens.add({
       targets: { progress: 1 },
       progress: 0,
       duration: this.options.duration,
       ease: 'Linear',
+      paused: true, // Start paused
       onUpdate: (tween) => {
         const progress = tween.getValue() || 0;
         this.updateTimerBar(progress, barWidth, barHeight);
@@ -197,57 +198,106 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   private updateTimerBar(progress: number, width: number, height: number): void {
     this.timerBar.clear();
 
-    // Color based on remaining time
+    // Check if timer is paused
+    const isPaused = this.timerTween && this.timerTween.isPaused();
+
+    // Color based on remaining time and pause state
     let color = 0x00ff00; // Green
-    if (progress < 0.5) color = 0xffaa00; // Orange
-    if (progress < 0.25) color = 0xff0000; // Red
+    if (isPaused) {
+      color = 0x666666; // Gray when paused
+    } else {
+      if (progress < 0.5) color = 0xffaa00; // Orange
+      if (progress < 0.25) color = 0xff0000; // Red
+    }
 
     // Draw progress
     this.timerBar.fillStyle(color);
     this.timerBar.fillRect(-width / 2, 0, width * progress, height);
 
-    // Draw border
-    this.timerBar.lineStyle(2, 0xffffff);
-    this.timerBar.strokeRect(-width / 2, 0, width, height);
+    // Draw border (different style when paused)
+    if (isPaused) {
+      this.timerBar.lineStyle(2, 0x888888); // Gray border when paused
+      this.timerBar.strokeRect(-width / 2, 0, width, height);
+      // Add pause indicator
+      this.timerBar.fillStyle(0xffffff);
+      this.timerBar.fillRect(-3, -height/2 - 4, 2, 8);
+      this.timerBar.fillRect(1, -height/2 - 4, 2, 8);
+    } else {
+      this.timerBar.lineStyle(2, 0xffffff);
+      this.timerBar.strokeRect(-width / 2, 0, width, height);
+    }
+  }
+
+  private pauseTimer(): void {
+    if (this.timerTween && !this.timerTween.isPaused()) {
+      this.timerTween.pause();
+      console.log('⏸️ Timer paused');
+      // Update visual to show paused state
+      const progress = this.timerTween.getValue() || 0;
+      this.updateTimerBar(progress, 400, 12);
+    }
+  }
+
+  private resumeTimer(): void {
+    if (this.timerTween && this.timerTween.isPaused()) {
+      this.timerTween.resume();
+      console.log('▶️ Timer resumed');
+      // Update visual to show active state
+      const progress = this.timerTween.getValue() || 0;
+      this.updateTimerBar(progress, 400, 12);
+    }
   }
 
   public setRecordingState(state: 'ready' | 'recording' | 'processing' | 'success' | 'error'): void {
-    // Update state text
+    // Safety check: Don't update if dialog is being destroyed
+    if (!this.active || !this.stateText || !this.stateText.active || !this.instructionText || !this.instructionText.active) {
+      console.log('⚠️ Skipping state update - dialog not active');
+      return;
+    }
+
+    // Control timer based on state
     switch (state) {
       case 'ready':
+        this.pauseTimer(); // Pause while waiting for user input
         this.stateText.setText('🎤 READY');
         this.stateText.setColor('#00ff00');
-        this.instructionText.setText('Recording will start automatically');
+        this.instructionText.setText('Hold SPACE to record');
         this.showMicReady();
         break;
       case 'recording':
+        this.resumeTimer(); // Only count down during recording
         this.stateText.setText('🔴 RECORDING...');
         this.stateText.setColor('#ff0000');
-        this.instructionText.setText('Press SPACE when done');
+        this.instructionText.setText('Release SPACE when done speaking');
         this.showMicRecording();
         this.recordingStartTime = Date.now();
         this.startRecordingAnimation();
         break;
       case 'processing':
+        this.pauseTimer(); // Pause while processing audio
         this.stateText.setText('⏳ PROCESSING...');
         this.stateText.setColor('#ffaa00');
-        this.instructionText.setText('Analyzing speech...');
+        this.instructionText.setText('Capturing word ending...');
         this.stopRecordingAnimation();
         break;
       case 'success':
+        this.pauseTimer(); // Pause after successful recognition
         this.stateText.setText('✓ RECOGNIZED!');
         this.stateText.setColor('#00ff00');
         this.instructionText.setText('Great! Keep going!');
         break;
       case 'error':
+        this.pauseTimer(); // Pause while showing error
         this.stateText.setText('❌ TRY AGAIN');
         this.stateText.setColor('#ff0000');
-        this.instructionText.setText('Recording will restart...');
+        this.instructionText.setText('Hold SPACE to try again');
         break;
     }
   }
 
   private showMicReady(): void {
+    if (!this.micIndicator || !this.micIndicator.active) return;
+
     this.micIndicator.clear();
     this.micIndicator.fillStyle(0x888888);
     this.micIndicator.fillCircle(0, 0, 8);
@@ -258,6 +308,8 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   }
 
   private showMicRecording(): void {
+    if (!this.micIndicator || !this.micIndicator.active) return;
+
     this.micIndicator.clear();
     this.micIndicator.fillStyle(0xff0000);
     this.micIndicator.fillCircle(0, 0, 8);
@@ -277,6 +329,8 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   }
 
   private startRecordingAnimation(): void {
+    if (!this.recordingBar || !this.recordingBar.active) return;
+
     // Animate recording bar to show duration
     this.scene.tweens.add({
       targets: { width: 0 },
@@ -284,6 +338,7 @@ export class CastingDialog extends Phaser.GameObjects.Container {
       duration: 5000, // Max 5 seconds recording
       ease: 'Linear',
       onUpdate: (tween) => {
+        if (!this.recordingBar || !this.recordingBar.active) return;
         const width = tween.getValue() || 0;
         this.recordingBar.clear();
         this.recordingBar.fillStyle(0xff0000);
@@ -294,7 +349,9 @@ export class CastingDialog extends Phaser.GameObjects.Container {
 
   private stopRecordingAnimation(): void {
     this.scene.tweens.killTweensOf({ width: 0 });
-    this.recordingBar.clear();
+    if (this.recordingBar && this.recordingBar.active) {
+      this.recordingBar.clear();
+    }
   }
 
   public handleWordSuccess(word: string, result: SpeechRecognitionResult): void {
@@ -328,9 +385,9 @@ export class CastingDialog extends Phaser.GameObjects.Container {
 
       // Update instruction
       if (this.comboWords.length === 1) {
-        this.instructionText.setText('Great! Keep going for a combo!');
+        this.instructionText.setText('Great! Hold SPACE for next word');
       } else {
-        this.instructionText.setText(`Combo x${this.comboWords.length}! Keep it up!`);
+        this.instructionText.setText(`Combo x${this.comboWords.length}! Hold SPACE to continue`);
       }
     }
   }
@@ -402,8 +459,8 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   }
 
   private getNextWord(): string | null {
-    // This will be called by GameScene to get the next word
-    // For now, return null to be implemented with WordManager integration
+    // Note: This is not used anymore - GameScene manages word selection
+    // The word is set via setNextWord() from GameScene
     return null;
   }
 
@@ -416,15 +473,21 @@ export class CastingDialog extends Phaser.GameObjects.Container {
 
     // Stop mic indicator animation
     this.scene.tweens.killTweensOf(this.micIndicator);
-    this.micIndicator.clear();
+    if (this.micIndicator && this.micIndicator.active) {
+      this.micIndicator.clear();
+    }
 
     // Show completion message
     const resultText = this.comboWords.length > 0
       ? `Combo x${this.comboWords.length}! Casting spell...`
       : 'No words spoken. Spell fizzled...';
 
-    this.instructionText.setText(resultText);
-    this.currentWordText.setText('');
+    if (this.instructionText && this.instructionText.active) {
+      this.instructionText.setText(resultText);
+    }
+    if (this.currentWordText && this.currentWordText.active) {
+      this.currentWordText.setText('');
+    }
 
     // Brief pause then fire callback
     this.scene.time.delayedCall(1000, () => {
@@ -456,6 +519,11 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   }
 
   public setNextWord(word: string): void {
+    if (!this.active || !this.currentWordText || !this.currentWordText.active) {
+      console.log('⚠️ Skipping word update - dialog not active');
+      return;
+    }
+
     this.currentWord = word;
     this.currentWordText.setText(word.toUpperCase());
 

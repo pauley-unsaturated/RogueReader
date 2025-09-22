@@ -310,8 +310,10 @@ export class Enemy extends Phaser.GameObjects.Container {
       loop: true
     });
 
-    // Show combat indicator
-    this.nameText.setColor('#ff0000');
+    // Show combat indicator - safety check
+    if (this.nameText && this.nameText.active) {
+      this.nameText.setColor('#ff0000');
+    }
   }
 
   public stopCombat(): void {
@@ -322,7 +324,10 @@ export class Enemy extends Phaser.GameObjects.Container {
       this.attackTimer = undefined;
     }
 
-    this.nameText.setColor('#ffffff');
+    // Safety check: only update color if nameText is still valid
+    if (this.nameText && this.nameText.active) {
+      this.nameText.setColor('#ffffff');
+    }
   }
 
   private performAttack(playerPosition: { x: number; y: number }): void {

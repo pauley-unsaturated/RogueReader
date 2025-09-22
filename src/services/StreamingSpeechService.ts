@@ -56,12 +56,29 @@ export class StreamingSpeechService {
         mimeType: mimeType
       })
 
+      console.log(`🎤 MediaRecorder created with mimeType: ${mimeType}`)
+      console.log(`🎤 MediaRecorder state: ${this.mediaRecorder.state}`)
+
       // Collect audio chunks
       this.mediaRecorder.ondataavailable = (event) => {
+        console.log(`📼 Audio chunk received: ${event.data.size} bytes`)
         if (event.data.size > 0) {
           this.audioChunks.push(event.data)
           this.accumulatedAudio.push(event.data) // Keep full recording
         }
+      }
+
+      // Handle recording stop to ensure final chunk is captured
+      this.mediaRecorder.onstop = () => {
+        console.log(`🏁 Recording stopped - total chunks: ${this.accumulatedAudio.length}`)
+        if (this.accumulatedAudio.length === 0) {
+          console.warn('🚨 MediaRecorder stopped but no audio chunks were captured!')
+        }
+      }
+
+      // Add error handler
+      this.mediaRecorder.onerror = (event) => {
+        console.error('🚨 MediaRecorder error:', event)
       }
 
       // Start recording with reasonable timeslice
@@ -93,14 +110,25 @@ export class StreamingSpeechService {
 
 
   async getRecordedAudio(): Promise<Blob | null> {
+    console.log(`📋 Checking recorded audio: ${this.accumulatedAudio.length} chunks`)
+
+    // Give MediaRecorder a moment to finalize (Safari needs this)
+    await new Promise(resolve => setTimeout(resolve, 100))
+
     if (this.accumulatedAudio.length === 0) {
-      console.log('⚠️ No audio recorded')
+      console.log('⚠️ No audio chunks recorded')
       return null
     }
 
     const mimeType = this.mediaRecorder?.mimeType || 'audio/webm'
     const audioBlob = new Blob(this.accumulatedAudio, { type: mimeType })
     console.log(`🎣 Complete recording: ${audioBlob.size} bytes (${mimeType})`)
+
+    if (audioBlob.size === 0) {
+      console.log('⚠️ Audio blob is empty despite having chunks')
+      return null
+    }
+
     return audioBlob
   }
 
@@ -114,6 +142,8 @@ export class StreamingSpeechService {
 
     if (this.mediaRecorder && this.isRecording) {
       this.isRecording = false
+      // Force a final chunk by requesting data
+      this.mediaRecorder.requestData()
       this.mediaRecorder.stop()
     }
 
@@ -129,16 +159,14 @@ export class StreamingSpeechService {
 
     console.log(`🌐 Browser detected: ${isSafari ? 'Safari' : 'Other'}`)
 
-    // Safari-first mime types
+    // Simplified, more compatible mime types
     const mimeTypes = isSafari ? [
-      'audio/mp4;codecs=mp4a.40.2',  // Safari preferred
-      'audio/mp4',                   // Safari fallback
-      'audio/webm',                  // Last resort
+      'audio/mp4',                   // Safari simple MP4
+      'audio/webm',                  // Basic WebM fallback
     ] : [
       'audio/webm;codecs=opus',      // Chrome/Firefox preferred
-      'audio/mp4;codecs=mp4a.40.2',
-      'audio/mp4',
-      'audio/webm'
+      'audio/webm',                  // Simple WebM
+      'audio/mp4',                   // MP4 fallback
     ]
 
     for (const mimeType of mimeTypes) {

@@ -6,6 +6,8 @@ export class Player extends Phaser.GameObjects.Sprite {
   public gridY: number
   public health: number
   public mana: number
+  public maxHealth: number
+  public maxMana: number
   public isMoving: boolean = false
   private currentAnimation: string = 'idle'
 
@@ -24,10 +26,16 @@ export class Player extends Phaser.GameObjects.Sprite {
 
     this.gridX = gridX
     this.gridY = gridY
-    this.health = GAME_CONFIG.COMBAT.BASE_PLAYER_HP
-    this.mana = GAME_CONFIG.COMBAT.BASE_PLAYER_MANA
+    this.maxHealth = GAME_CONFIG.COMBAT.BASE_PLAYER_HP
+    this.maxMana = GAME_CONFIG.COMBAT.BASE_PLAYER_MANA
+    this.health = this.maxHealth
+    this.mana = this.maxMana
 
     scene.add.existing(this)
+
+    // Initial UI update
+    scene.events.emit('update-health', this.health, this.maxHealth)
+    scene.events.emit('update-mana', this.mana, this.maxMana)
 
     // Set up sprite properties
     this.setOrigin(0.5, 0.5)
@@ -142,6 +150,9 @@ export class Player extends Phaser.GameObjects.Sprite {
   takeDamage(amount: number): boolean {
     this.health = Math.max(0, this.health - amount)
 
+    // Emit event for UI update
+    this.scene.events.emit('update-health', this.health, this.maxHealth)
+
     // Visual feedback
     this.scene.tweens.add({
       targets: this,
@@ -155,19 +166,25 @@ export class Player extends Phaser.GameObjects.Sprite {
   }
 
   heal(amount: number): void {
-    this.health = Math.min(GAME_CONFIG.COMBAT.BASE_PLAYER_HP, this.health + amount)
+    this.health = Math.min(this.maxHealth, this.health + amount)
+    // Emit event for UI update
+    this.scene.events.emit('update-health', this.health, this.maxHealth)
   }
 
   useMana(amount: number): boolean {
     if (this.mana >= amount) {
       this.mana -= amount
+      // Emit event for UI update
+      this.scene.events.emit('update-mana', this.mana, this.maxMana)
       return true
     }
     return false
   }
 
   restoreMana(amount: number): void {
-    this.mana = Math.min(GAME_CONFIG.COMBAT.BASE_PLAYER_MANA, this.mana + amount)
+    this.mana = Math.min(this.maxMana, this.mana + amount)
+    // Emit event for UI update
+    this.scene.events.emit('update-mana', this.mana, this.maxMana)
   }
 
   getGridPosition(): { x: number; y: number } {
