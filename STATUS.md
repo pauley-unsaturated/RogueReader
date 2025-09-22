@@ -37,24 +37,33 @@
 
 ## 🚧 Current Issues
 
-1. **Spell Casting Interface** - Basic modal exists but needs speech recognition integration
-2. **Combat System** - Placeholder mechanics need full implementation
+1. **Speech Recognition Flow** - Implemented spacebar-controlled recording but has bugs:
+   - Latency issues with Whisper API (trying gpt-4o-mini-transcribe)
+   - Safari codec compatibility fixed (MP4/AAC)
+   - Auto-recording on dialog open and after successful words
+   - **Critical bugs remain in the flow that need fixing**
+2. **Combat System** - Basic implementation complete, needs polish
 3. **Audio System** - No audio implementation yet
 4. **Game Balance** - Difficulty progression needs tuning
 
 ## 🎯 Next Development Priorities
 
 ### Phase 1: Core Gameplay Loop (High Priority)
-1. **Speech Recognition Integration**
-   - Integrate Whisper API for speech-to-text
-   - Real-time pronunciation feedback
-   - Word accuracy scoring system
+1. **Speech Recognition Integration** (IN PROGRESS)
+   - ✅ Integrated OpenAI Whisper/gpt-4o-mini-transcribe API
+   - ✅ Safari codec support (MP4/AAC)
+   - ✅ Spacebar-controlled recording flow
+   - 🚧 **FIX CRITICAL BUGS IN RECORDING FLOW**
+   - ⏳ Real-time pronunciation feedback
+   - ⏳ Word accuracy scoring system
 
-2. **Combat Mechanics**
-   - Enemy AI and movement
-   - Spell effects and damage calculations
-   - Reading failure consequences
-   - Victory/defeat conditions
+2. **Combat Mechanics** (PARTIALLY COMPLETE)
+   - ✅ Basic combat system with spell chains
+   - ✅ Enemy spawning and basic interactions
+   - ✅ Spell effects tied to word recognition
+   - ⏳ Enemy AI and movement improvements
+   - ⏳ Reading failure consequences
+   - ⏳ Victory/defeat conditions
 
 3. **Game Progression**
    - Level completion criteria

@@ -12,6 +12,9 @@ export interface SpellCast {
   damage: number;
   element?: 'fire' | 'ice' | 'lightning' | 'neutral';
   timestamp: number;
+  isCriticalHit?: boolean;
+  pronunciationScore?: number;
+  spellingPenalty?: number;
 }
 
 export interface ComboState {
@@ -85,7 +88,11 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
     }
   }
 
-  public castSpell(word: string, targetId?: string): SpellCast {
+  public castSpell(word: string, targetId?: string, speechResult?: {
+    pronunciationScore?: number,
+    isCriticalHit?: boolean,
+    spellingPenalty?: number
+  }): SpellCast {
     const now = Date.now();
 
     // Update combo state
@@ -99,7 +106,32 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
     const complexityMultiplier = 1 + (wordComplexity * 0.5); // 50% bonus per complexity level
 
     // Apply combo multiplier
-    const totalDamage = Math.floor(baseDamage * complexityMultiplier * this.comboState.multiplier);
+    let totalMultiplier = complexityMultiplier * this.comboState.multiplier;
+
+    // Apply speech recognition bonuses/penalties
+    let isCriticalHit = false;
+    let pronunciationScore = 1.0;
+    let spellingPenalty = 0;
+
+    if (speechResult) {
+      pronunciationScore = speechResult.pronunciationScore || 1.0;
+      isCriticalHit = speechResult.isCriticalHit || false;
+      spellingPenalty = speechResult.spellingPenalty || 0;
+
+      // Critical hit gives 2x damage bonus
+      if (isCriticalHit) {
+        totalMultiplier *= 2.0;
+      }
+
+      // Pronunciation accuracy affects damage (0.5x to 1.5x based on score)
+      const pronunciationMultiplier = 0.5 + (pronunciationScore * 1.0);
+      totalMultiplier *= pronunciationMultiplier;
+
+      // Spelling penalty reduces damage
+      totalMultiplier *= Math.max(0.3, 1.0 - spellingPenalty);
+    }
+
+    const totalDamage = Math.floor(baseDamage * totalMultiplier);
 
     // Determine element based on phonetics
     const element = this.getWordElement(word);
@@ -108,7 +140,10 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
       word,
       damage: totalDamage,
       element,
-      timestamp: now
+      timestamp: now,
+      isCriticalHit,
+      pronunciationScore,
+      spellingPenalty
     };
 
     this.spellHistory.push(spell);

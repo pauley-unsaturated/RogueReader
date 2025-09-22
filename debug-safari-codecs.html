@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Safari Codec Support Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 50px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 800px;
+        }
+        h1 { color: #00ff00; }
+        .supported { color: #00ff00; }
+        .not-supported { color: #ff6666; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #444;
+        }
+        th { background: #333; }
+        .test-button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        .test-button:hover { background: #00dd00; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔊 Safari Audio Codec Support Test</h1>
+
+        <h2>MediaRecorder Support:</h2>
+        <table id="codecTable">
+            <tr>
+                <th>MIME Type</th>
+                <th>Supported</th>
+                <th>Description</th>
+            </tr>
+        </table>
+
+        <h2>Quick Test:</h2>
+        <button class="test-button" onclick="testRecording()">Test Recording with Best Format</button>
+        <button class="test-button" onclick="playTestSound()">Play Test Sound</button>
+
+        <div id="output" style="margin-top: 20px; padding: 15px; background: #333; border-radius: 5px; min-height: 100px;">
+            <div style="color: #00ff00;">Ready to test...</div>
+        </div>
+    </div>
+
+    <script>
+        const log = (message, isError = false) => {
+            const output = document.getElementById('output');
+            const div = document.createElement('div');
+            div.style.color = isError ? '#ff6666' : '#00ff00';
+            div.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+            console.log(message);
+        };
+
+        const codecs = [
+            { mime: 'audio/mp4;codecs=mp4a.40.2', desc: 'AAC in MP4 (Safari preferred)' },
+            { mime: 'audio/mp4', desc: 'Basic MP4' },
+            { mime: 'audio/webm', desc: 'Basic WebM' },
+            { mime: 'audio/webm;codecs=opus', desc: 'WebM with Opus' },
+            { mime: 'audio/webm;codecs=vp8', desc: 'WebM with VP8' },
+            { mime: 'audio/ogg;codecs=opus', desc: 'OGG with Opus' },
+            { mime: 'audio/wav', desc: 'WAV (if supported)' },
+            { mime: 'audio/mpeg', desc: 'MPEG Audio' },
+            { mime: 'audio/aac', desc: 'Raw AAC' }
+        ];
+
+        function checkCodecSupport() {
+            const table = document.getElementById('codecTable');
+
+            codecs.forEach(codec => {
+                const row = table.insertRow();
+                const mimeCell = row.insertCell();
+                const supportCell = row.insertCell();
+                const descCell = row.insertCell();
+
+                mimeCell.textContent = codec.mime;
+                descCell.textContent = codec.desc;
+
+                const isSupported = MediaRecorder.isTypeSupported(codec.mime);
+                supportCell.textContent = isSupported ? '✅ YES' : '❌ NO';
+                supportCell.className = isSupported ? 'supported' : 'not-supported';
+
+                log(`${codec.mime}: ${isSupported ? 'SUPPORTED' : 'NOT SUPPORTED'}`);
+            });
+        }
+
+        async function testRecording() {
+            try {
+                log('🎤 Starting recording test...');
+
+                // Find the first supported format
+                let selectedMimeType = '';
+                for (const codec of codecs) {
+                    if (MediaRecorder.isTypeSupported(codec.mime)) {
+                        selectedMimeType = codec.mime;
+                        break;
+                    }
+                }
+
+                if (!selectedMimeType) {
+                    log('❌ No supported audio formats found!', true);
+                    return;
+                }
+
+                log(`📹 Using format: ${selectedMimeType}`);
+
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: 16000,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+
+                const mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: selectedMimeType
+                });
+
+                const audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    log(`📊 Received ${event.data.size} bytes of audio data`);
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: selectedMimeType });
+                    log(`✅ Recording complete! Size: ${audioBlob.size} bytes`);
+                    log(`🔊 Blob type: ${audioBlob.type}`);
+
+                    // Create a download link for testing
+                    const url = URL.createObjectURL(audioBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `test-audio.${selectedMimeType.includes('mp4') ? 'mp4' : 'webm'}`;
+                    a.textContent = 'Download recorded audio';
+                    a.style.color = '#00ff00';
+                    a.style.display = 'block';
+                    a.style.margin = '10px 0';
+                    document.getElementById('output').appendChild(a);
+
+                    // Also try to play it back
+                    const audio = new Audio(url);
+                    audio.play().then(() => {
+                        log('🔊 Playing back recording...');
+                    }).catch(err => {
+                        log(`❌ Playback failed: ${err.message}`, true);
+                    });
+
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                log('🔴 Recording... speak for 3 seconds!');
+
+                setTimeout(() => {
+                    mediaRecorder.stop();
+                    log('⏹️ Recording stopped');
+                }, 3000);
+
+            } catch (error) {
+                log(`❌ Recording test failed: ${error.message}`, true);
+            }
+        }
+
+        function playTestSound() {
+            log('🔊 Playing test sound...');
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.frequency.value = 440; // A note
+            gainNode.gain.value = 0.1;
+
+            oscillator.start();
+            setTimeout(() => {
+                oscillator.stop();
+                log('✅ Test sound complete');
+            }, 500);
+        }
+
+        // Browser detection
+        function detectBrowser() {
+            const userAgent = navigator.userAgent;
+            let browser = 'Unknown';
+
+            if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) {
+                browser = 'Safari';
+            } else if (userAgent.includes('Chrome')) {
+                browser = 'Chrome';
+            } else if (userAgent.includes('Firefox')) {
+                browser = 'Firefox';
+            }
+
+            log(`🌐 Browser detected: ${browser}`);
+            log(`🔧 User Agent: ${userAgent}`);
+        }
+
+        // Run tests on page load
+        window.addEventListener('load', () => {
+            detectBrowser();
+            checkCodecSupport();
+
+            log('ℹ️ Safari Audio Tips:');
+            log('  - MP4 with AAC is Safari\'s preferred format');
+            log('  - Opus codec has limited Safari support');
+            log('  - WebM support varies by Safari version');
+            log('  - Test with actual recording to verify');
+        });
+    </script>
+</body>
+</html>

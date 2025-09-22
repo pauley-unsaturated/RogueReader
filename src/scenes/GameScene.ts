@@ -5,8 +5,12 @@ import { AssetLoader } from '@/systems/AssetLoader'
 import { GAME_CONFIG } from '@/config/GameConfig'
 import { CombatSystem } from '@/systems/CombatSystem'
 import { CombatUI } from '@/components/CombatUI'
+import { CastingDialog } from '@/components/CastingDialog'
 import { Enemy, EnemyConfig } from '@/entities/Enemy'
 import { WordManager } from '@/systems/WordManager'
+import { SpeechRecognitionResult } from '@/services/SpeechRecognitionService'
+import { PronunciationHelpService } from '@/services/PronunciationHelpService'
+import { StreamingSpeechService } from '@/services/StreamingSpeechService'
 
 export class GameScene extends Phaser.Scene {
   private player!: Player
@@ -17,11 +21,18 @@ export class GameScene extends Phaser.Scene {
   private tiles: Phaser.GameObjects.Rectangle[][] = []
   private combatSystem!: CombatSystem
   private combatUI!: CombatUI
+  private castingDialog: CastingDialog | null = null
   private enemies: Enemy[] = []
   private wordManager!: WordManager
   private currentWord: string | null = null
+  private comboWords: string[] = []
+  private pendingComboResults: SpeechRecognitionResult[] = []
   private isInCombat: boolean = false
   private isGameOver: boolean = false
+  private streamingService: StreamingSpeechService | null = null
+  private pronunciationHelp: PronunciationHelpService | null = null
+  private isListeningForSpeech: boolean = false
+  private isGamePaused: boolean = false
 
   constructor() {
     super({ key: 'GameScene' })
@@ -48,6 +59,16 @@ export class GameScene extends Phaser.Scene {
     // Initialize systems
     this.wordManager = new WordManager()
     this.combatSystem = new CombatSystem()
+
+    // Initialize speech services
+    try {
+      this.streamingService = new StreamingSpeechService()
+      this.pronunciationHelp = new PronunciationHelpService()
+      console.log('Speech services initialized successfully')
+    } catch (error) {
+      console.error('Failed to initialize speech services:', error)
+      // Game can still work without speech recognition
+    }
 
     // Setup combat event listeners
     this.setupCombatListeners()
@@ -204,10 +225,24 @@ export class GameScene extends Phaser.Scene {
       this.movePlayer(1, 0)
     })
 
-    // Interaction
+    // Interaction and speech casting
     this.input.keyboard!.on('keydown-SPACE', () => {
       console.log('SPACE pressed!')
-      this.interact()
+
+      // If dialog is open and recording, stop and process
+      if (this.castingDialog && this.castingDialog.isRecordingActive()) {
+        // Stop recording and process
+        this.stopRecordingAndProcess()
+      } else if (this.castingDialog && !this.castingDialog.isRecordingActive()) {
+        // Dialog open but not recording - do nothing (processing or showing result)
+        console.log('⏳ Still processing previous word...')
+      } else if (this.isInCombat) {
+        // Open dialog (will auto-start recording)
+        this.showCastingDialog()
+      } else {
+        // Non-combat interaction
+        this.interact()
+      }
     })
 
     // Debug: Next floor
@@ -400,44 +435,606 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showCombatPrompt(): void {
-    // Get a word appropriate for the player's level
-    const wordData = this.wordManager.selectWordForLevel(this.currentFloor)
-    if (wordData) {
-      this.currentWord = wordData.word
-      this.combatUI.showCastingWord(this.currentWord)
-
-      // For now, simulate spell casting after a delay
-      // Later this will be triggered by speech recognition
-      this.time.delayedCall(2000, () => {
-        if (this.currentWord) {
-          this.castSpell(this.currentWord)
-        }
-      })
-    }
+    // This is now handled by showCastingDialog when space is pressed
+    this.combatUI.showSpeechPrompt()
   }
 
   private hideCombatPrompt(): void {
-    this.currentWord = null
-    this.combatUI.hideCastingWord()
+    this.combatUI.hideSpeechPrompt()
+    this.combatUI.hideMicrophoneIndicator()
+    this.combatUI.hidePronunciationHelp()
   }
 
-  private castSpell(word: string): void {
-    if (!this.isInCombat) return
+  private castSpell(word: string, speechResult?: SpeechRecognitionResult): void {
+    console.log('🪄 castSpell called!')
+    console.log(`  - Word: "${word}"`)
+    console.log(`  - Is in combat: ${this.isInCombat}`)
+    console.log(`  - Speech result:`, speechResult)
 
-    // Cast the spell
-    this.combatSystem.castSpell(word)
+    if (!this.isInCombat) {
+      console.log('❌ Not in combat, spell cancelled')
+      return
+    }
+
+    // Calculate speech-based modifiers
+    let speechModifiers = undefined
+    if (speechResult) {
+      speechModifiers = {
+        pronunciationScore: speechResult.pronunciation_score || 1.0,
+        isCriticalHit: speechResult.isCriticalHit,
+        spellingPenalty: speechResult.isTimeout ? 0.3 : 0
+      }
+      console.log('🎯 Speech modifiers:', speechModifiers)
+    }
+
+    // Cast the spell with speech results
+    console.log('⚡ Calling combatSystem.castSpell...')
+    const spell = this.combatSystem.castSpell(word, undefined, speechModifiers)
+    console.log('✨ Spell cast result:', spell)
+
+    // Show spell effects
+    if (spell.isCriticalHit) {
+      console.log('💥 Showing critical hit effect!')
+      this.combatUI.showCriticalHit()
+    }
 
     // Show complexity bonus
     const complexity = this.combatSystem['calculateWordComplexity'](word)
     this.combatUI.showWordComplexity(word, complexity)
 
     // Record word attempt for spaced repetition
-    this.wordManager.recordWordAttempt(word, this.currentFloor, true, 1000) // Simulating 1 second read time
+    const readTime = speechResult?.isTimeout ? 5000 : 2000
+    const success = !speechResult?.isError && !speechResult?.isTimeout
+    this.wordManager.recordWordAttempt(word, this.currentFloor, success, readTime)
 
     // Get next word if still in combat
     if (this.isInCombat) {
+      console.log('🔄 Still in combat, showing next prompt')
       this.showCombatPrompt()
+    } else {
+      console.log('✅ Combat ended')
     }
+  }
+
+  private showCastingDialog(): void {
+    if (this.castingDialog || !this.isInCombat) return
+
+    // Get initial word for the spell
+    const wordData = this.wordManager.selectWordForLevel(this.currentFloor)
+    if (!wordData) {
+      console.error('No word available for casting')
+      return
+    }
+
+    // Get a spell name from the current combat system
+    const spellName = this.getRandomSpellName()
+
+    // Reset combo tracking
+    this.comboWords = []
+    this.pendingComboResults = []
+    this.currentWord = wordData.word
+
+    // Create and show the casting dialog
+    this.castingDialog = new CastingDialog(this, {
+      spellName: spellName,
+      duration: 10000, // 10 second timer (gives more time for API responses)
+      onTimerEnd: (results) => this.handleComboComplete(results),
+      onClose: () => {
+        this.streamingService?.stopStreaming()
+        this.castingDialog = null
+        this.isListeningForSpeech = false
+      }
+    })
+
+    this.castingDialog.show(wordData.word)
+
+    // IMMEDIATELY start recording
+    this.startRecordingForWord()
+  }
+
+  private getRandomSpellName(): string {
+    const spellNames = ['Fireball', 'Ice Shard', 'Lightning Bolt', 'Magic Missile', 'Arcane Blast']
+    return spellNames[Math.floor(Math.random() * spellNames.length)]
+  }
+
+  private startRecordingForWord(): void {
+    if (!this.streamingService || !this.castingDialog || this.isListeningForSpeech) {
+      return
+    }
+
+    const currentWord = this.castingDialog.getCurrentWord()
+    if (!currentWord) return
+
+    console.log('🎤 Starting recording for word:', currentWord)
+    this.isListeningForSpeech = true
+    this.currentWord = currentWord
+
+    // Update UI to show recording
+    this.castingDialog.startRecording()
+
+    // Start streaming service
+    this.streamingService.startStreaming({
+      targetWord: currentWord,
+      onPartialResult: (text: string) => {
+        console.log(`📝 Partial: "${text}"`)
+      },
+      onFinalResult: () => {
+        // Don't process yet - wait for spacebar to stop
+      },
+      maxDuration: 10000 // 10 seconds max
+    })
+  }
+
+  private async stopRecordingAndProcess(): Promise<void> {
+    if (!this.streamingService || !this.castingDialog || !this.isListeningForSpeech) {
+      return
+    }
+
+    console.log('🔴 Stopping recording and processing...')
+    this.castingDialog.stopRecording()
+
+    // Stop streaming and get the accumulated audio
+    this.streamingService.stopStreaming()
+
+    // Now send the complete audio for transcription
+    await this.processRecordedAudio()
+  }
+
+  private async processRecordedAudio(): Promise<void> {
+    if (!this.currentWord) return
+
+    try {
+      // Get the audio blob from streaming service
+      const audioBlob = await this.streamingService?.getRecordedAudio()
+      if (!audioBlob) {
+        this.castingDialog?.handleWordError()
+        this.isListeningForSpeech = false
+        return
+      }
+
+      // Send to Whisper for transcription
+      const result = await this.transcribeAudio(audioBlob, this.currentWord)
+      this.handleDialogSpeechResult(result)
+    } catch (error) {
+      console.error('Processing error:', error)
+      this.castingDialog?.handleWordError()
+      this.isListeningForSpeech = false
+    }
+  }
+
+  private async transcribeAudio(audioBlob: Blob, targetWord: string): Promise<SpeechRecognitionResult> {
+    const formData = new FormData()
+    const fileExt = audioBlob.type.includes('mp4') ? 'mp4' : 'webm'
+    formData.append('file', audioBlob, `audio.${fileExt}`)
+    formData.append('model', 'gpt-4o-mini-transcribe') // Use faster model
+    formData.append('language', 'en')
+    formData.append('response_format', 'json')
+    formData.append('prompt', `The user is saying the single word: ${targetWord}`)
+
+    const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY
+    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: formData
+    })
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const transcribedText = data.text?.toLowerCase().trim() || ''
+
+    // Clean up repeated words and punctuation
+    const cleanedText = this.cleanTranscription(transcribedText, targetWord)
+
+    // Check accuracy
+    const isMatch = cleanedText === targetWord.toLowerCase()
+    const confidence = isMatch ? 1.0 : 0.5
+
+    return {
+      text: cleanedText,
+      confidence,
+      pronunciation_score: confidence,
+      isCriticalHit: isMatch && confidence > 0.95,
+      isTimeout: false,
+      isError: false
+    }
+  }
+
+  private cleanTranscription(text: string, targetWord: string): string {
+    // Remove punctuation
+    let cleaned = text.replace(/[!.,?;]/g, '').toLowerCase().trim()
+
+    // Handle repeated words
+    const words = cleaned.split(/\s+/)
+    if (words.every(w => w === targetWord.toLowerCase())) {
+      return targetWord.toLowerCase()
+    }
+
+    // If target word appears anywhere, return it
+    if (words.includes(targetWord.toLowerCase())) {
+      return targetWord.toLowerCase()
+    }
+
+    return cleaned
+  }
+
+
+  private async handleDialogSpeechResult(result: SpeechRecognitionResult): Promise<void> {
+    this.isListeningForSpeech = false
+
+    if (!this.castingDialog || !this.currentWord) return
+
+    const spokenWord = result.text.toLowerCase().trim()
+    const targetWord = this.currentWord.toLowerCase().trim()
+
+    console.log(`🎯 Word matching: "${spokenWord}" vs "${targetWord}"`)
+    console.log(`  Confidence: ${result.confidence}`)
+    console.log(`  Pronunciation: ${result.pronunciation_score}`)
+
+    // Check for match
+    const isMatch = spokenWord === targetWord ||
+                   spokenWord.includes(targetWord) ||
+                   result.confidence > 0.7
+
+    if (isMatch && !result.isError && !result.isTimeout) {
+      // Success! Add to combo
+      this.comboWords.push(this.currentWord)
+      this.pendingComboResults.push(result)
+      this.castingDialog.handleWordSuccess(this.currentWord, result)
+
+      // Get next word
+      const nextWordData = this.wordManager.selectWordForLevel(this.currentFloor)
+      if (nextWordData) {
+        this.currentWord = nextWordData.word
+        this.castingDialog.setNextWord(nextWordData.word)
+
+        // IMMEDIATELY start recording the next word
+        this.startRecordingForWord()
+      }
+    } else {
+      // Failed - show error state
+      this.castingDialog.handleWordError()
+
+      // Auto-restart recording after brief delay
+      this.time.delayedCall(1500, () => {
+        if (this.castingDialog && this.currentWord) {
+          this.startRecordingForWord()
+        }
+      })
+    }
+  }
+
+  private handleComboComplete(results: SpeechRecognitionResult[]): void {
+    console.log('⏰ Timer complete! Combo results:', results)
+
+    // Stop any ongoing streaming
+    this.streamingService?.stopStreaming()
+
+    if (results.length === 0) {
+      // No words spoken - enter learning mode
+      if (this.currentWord) {
+        this.startPhoneticLessonMode()
+      }
+    } else {
+      // Cast spell with combo multiplier
+      const comboMultiplier = Math.min(3, 1 + (results.length - 1) * 0.5)
+
+      // Use best result from combo for spell casting (unused for now)
+      // const bestResult = results.reduce((best, current) => {
+      //   if (current.isCriticalHit && !best.isCriticalHit) return current
+      //   if (current.confidence > best.confidence) return current
+      //   return best
+      // })
+
+      // Cast spell for each word in combo
+      results.forEach((result, index) => {
+        const word = this.comboWords[index]
+        if (word) {
+          const modifiedResult = {
+            ...result,
+            confidence: result.confidence * comboMultiplier,
+            pronunciation_score: (result.pronunciation_score ?? 1) * comboMultiplier
+          }
+          this.castSpell(word, modifiedResult)
+        }
+      })
+    }
+
+    // Clean up
+    this.castingDialog = null
+    this.comboWords = []
+    this.pendingComboResults = []
+    this.currentWord = null
+  }
+
+  // Removed old handleSpeechResult - now handled by handleDialogSpeechResult
+  // Removed offerPronunciationHelp - now part of lesson mode
+
+  /* Unused - keeping for potential future use
+  private async offerPronunciationHelp(): Promise<void> {
+    if (!this.currentWord || !this.pronunciationHelp) return
+
+    // Pause the game for pronunciation help
+    this.isGamePaused = true
+    this.physics.pause()
+
+    this.combatUI.showPronunciationHelp(`Listen carefully: "${this.currentWord}"`)
+
+    try {
+      // Speak the word slowly first
+      await this.pronunciationHelp.speakSlowly(this.currentWord)
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      // Then break it into syllables if it's complex
+      if (this.currentWord.length > 4) {
+        this.combatUI.showPronunciationHelp('Now broken into syllables...')
+        await this.pronunciationHelp.speakSyllables(this.currentWord)
+      }
+
+      // Resume game with penalty spell
+      this.isGamePaused = false
+      this.physics.resume()
+
+      // Cast spell with penalty (50% damage)
+      const penaltyResult: SpeechRecognitionResult = {
+        text: this.currentWord,
+        confidence: 0.5,
+        pronunciation_score: 0.5,
+        isCriticalHit: false,
+        isTimeout: false,
+        isError: false
+      }
+
+      this.castSpell(this.currentWord, penaltyResult)
+    } catch (error) {
+      console.error('Pronunciation help failed:', error)
+      this.isGamePaused = false
+      this.physics.resume()
+      // Cast spell with penalty anyway
+      this.castSpell(this.currentWord)
+    }
+
+    this.combatUI.hidePronunciationHelp()
+  }
+  */
+
+  /* Unused - keeping for potential future use
+  private async offerTextInputFallback(): Promise<void> {
+    if (!this.currentWord) return
+
+    this.combatUI.showPronunciationHelp('Speech recording unavailable. Type the word and press Enter:')
+
+    // Pause the game
+    this.isGamePaused = true
+    this.physics.pause()
+
+    // Create a temporary text input
+    const inputElement = document.createElement('input')
+    inputElement.type = 'text'
+    inputElement.placeholder = `Type: ${this.currentWord}`
+    inputElement.style.position = 'fixed'
+    inputElement.style.top = '50%'
+    inputElement.style.left = '50%'
+    inputElement.style.transform = 'translate(-50%, -50%)'
+    inputElement.style.padding = '10px'
+    inputElement.style.fontSize = '18px'
+    inputElement.style.border = '2px solid #00ff00'
+    inputElement.style.borderRadius = '5px'
+    inputElement.style.backgroundColor = '#000'
+    inputElement.style.color = '#fff'
+    inputElement.style.zIndex = '10000'
+    document.body.appendChild(inputElement)
+
+    return new Promise((resolve) => {
+      inputElement.focus()
+
+      const handleInput = (event: KeyboardEvent) => {
+        if (event.key === 'Enter') {
+          const typedWord = inputElement.value.toLowerCase().trim()
+          document.body.removeChild(inputElement)
+
+          // Resume game
+          this.isGamePaused = false
+          this.physics.resume()
+
+          // Check if typed word matches
+          if (typedWord === this.currentWord?.toLowerCase().trim()) {
+            // Perfect typing gets normal spell
+            this.castSpell(this.currentWord!, {
+              text: typedWord,
+              confidence: 1.0,
+              pronunciation_score: 1.0,
+              isCriticalHit: false,
+              isTimeout: false,
+              isError: false
+            })
+          } else {
+            // Incorrect typing gets penalty
+            this.castSpell(this.currentWord!, {
+              text: typedWord,
+              confidence: 0.3,
+              pronunciation_score: 0.3,
+              isCriticalHit: false,
+              isTimeout: false,
+              isError: false
+            })
+          }
+
+          this.combatUI.hidePronunciationHelp()
+          resolve()
+        }
+      }
+
+      inputElement.addEventListener('keydown', handleInput)
+
+      // Auto-cleanup after 15 seconds
+      setTimeout(() => {
+        if (document.body.contains(inputElement)) {
+          document.body.removeChild(inputElement)
+          this.isGamePaused = false
+          this.physics.resume()
+          this.combatUI.hidePronunciationHelp()
+
+          // Cast spell with penalty for timeout
+          this.castSpell(this.currentWord!, {
+            text: '',
+            confidence: 0.1,
+            pronunciation_score: 0.1,
+            isCriticalHit: false,
+            isTimeout: true,
+            isError: false
+          })
+          resolve()
+        }
+      }, 15000)
+    })
+  }
+  */
+
+  /* Unused - keeping for potential future use
+  private calculateWordSimilarity(word1: string, word2: string): number {
+    if (!word1 || !word2) return 0
+    if (word1 === word2) return 1
+
+    // Simple similarity based on common characters and length
+    const maxLength = Math.max(word1.length, word2.length)
+    const commonChars = word1.split('').filter(char => word2.includes(char)).length
+    return commonChars / maxLength
+  }
+  */
+
+  private async startPhoneticLessonMode(word?: string): Promise<void> {
+    const targetWord = word || this.currentWord
+    if (!targetWord || !this.pronunciationHelp) return
+
+    console.log('🎓 Entering phonetic lesson mode for:', targetWord)
+
+    // Close dialog if open
+    if (this.castingDialog) {
+      this.castingDialog.close()
+      this.castingDialog = null
+    }
+
+    // Pause the game
+    this.isGamePaused = true
+    this.physics.pause()
+
+    // Break word into phonetic parts
+    const phoneticParts = this.breakWordIntoPhonetics(targetWord)
+    console.log('📚 Phonetic breakdown:', phoneticParts)
+
+    this.combatUI.showPronunciationHelp('Let\'s practice this word together...')
+
+    try {
+      // First, say the whole word slowly
+      await this.speakWithHighlight(targetWord, targetWord)
+      await this.delay(800)
+
+      // Then break it down phonetically
+      this.combatUI.showPronunciationHelp('Now let\'s break it down:')
+      await this.delay(500)
+
+      for (let i = 0; i < phoneticParts.length; i++) {
+        const part = phoneticParts[i]
+        await this.speakWithHighlight(part, targetWord, i)
+        await this.delay(600)
+      }
+
+      // Finally, say it all together again
+      await this.delay(500)
+      this.combatUI.showPronunciationHelp('Now all together:')
+      await this.speakWithHighlight(targetWord, targetWord)
+
+      // Resume game and cast spell with lesson penalty
+      await this.delay(1000)
+      this.isGamePaused = false
+      this.physics.resume()
+
+      // Cast spell with reduced damage for needing help
+      const lessonResult: SpeechRecognitionResult = {
+        text: targetWord,
+        confidence: 0.6,
+        pronunciation_score: 0.6,
+        isCriticalHit: false,
+        isTimeout: false,
+        isError: false
+      }
+
+      this.castSpell(targetWord, lessonResult)
+
+    } catch (error) {
+      console.error('Lesson mode failed:', error)
+      this.isGamePaused = false
+      this.physics.resume()
+      // Cast spell with penalty anyway
+      this.castSpell(targetWord)
+    }
+
+    this.combatUI.hidePronunciationHelp()
+  }
+
+  private breakWordIntoPhonetics(word: string): string[] {
+    // Simple phonetic breakdown - this could be more sophisticated
+    const patterns = [
+      // Common digraphs and blends
+      { pattern: /ch|sh|th|wh|ph/, type: 'digraph' },
+      { pattern: /bl|br|cl|cr|dr|fl|fr|gl|gr|pl|pr|sc|sk|sl|sm|sn|sp|st|sw|tr|tw/, type: 'blend' },
+      // Vowel patterns
+      { pattern: /ai|ay|ea|ee|ie|oa|oo|ou|ow/, type: 'vowel_team' },
+      // Single letters
+      { pattern: /[a-z]/, type: 'letter' }
+    ]
+
+    const parts: string[] = []
+    let remaining = word.toLowerCase()
+
+    while (remaining.length > 0) {
+      let matched = false
+
+      for (const { pattern } of patterns) {
+        const match = remaining.match(pattern)
+        if (match && match.index === 0) {
+          parts.push(match[0])
+          remaining = remaining.slice(match[0].length)
+          matched = true
+          break
+        }
+      }
+
+      if (!matched) {
+        // Fallback: take first character
+        parts.push(remaining[0])
+        remaining = remaining.slice(1)
+      }
+    }
+
+    return parts
+  }
+
+  private async speakWithHighlight(textToSpeak: string, fullWord: string, partIndex?: number): Promise<void> {
+    // Show phonetic breakdown with highlighting
+    if (partIndex !== undefined) {
+      const phoneticParts = this.breakWordIntoPhonetics(fullWord)
+      const partToHighlight = phoneticParts[partIndex]
+      this.combatUI.showPhoneticBreakdown(fullWord, partToHighlight, partIndex)
+      this.combatUI.showPronunciationHelp(`🔊 "${partToHighlight}" - Listen carefully...`)
+    } else {
+      // Show word in pronunciation help instead of casting word
+      this.combatUI.showPronunciationHelp(`🔊 "${fullWord}" - Listen carefully...`)
+    }
+
+    // Speak the text
+    if (this.pronunciationHelp) {
+      await this.pronunciationHelp.speakSlowly(textToSpeak)
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms))
   }
 
   private showReward(amount: number, type: string): void {
@@ -532,7 +1129,7 @@ export class GameScene extends Phaser.Scene {
 
   private showFirstTimeHelp(): void {
     const helpText = this.add.text(this.cameras.main.width / 2, this.cameras.main.height - 100,
-      'Use ARROW KEYS to move • Approach enemies to start combat',
+      'Use ARROW KEYS to move • Approach enemies to start combat • Press SPACE to speak words aloud',
       {
         fontSize: '18px',
         color: '#ffffff',
@@ -556,8 +1153,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, _delta: number): void {
-    // Don't update if game is over
-    if (this.isGameOver) return
+    // Don't update if game is over or paused
+    if (this.isGameOver || this.isGamePaused) return
 
     // Update enemies
     this.enemies.forEach(enemy => {

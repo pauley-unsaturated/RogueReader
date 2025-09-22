@@ -11,6 +11,12 @@ export class CombatUI extends Phaser.GameObjects.Container {
   private castingWord!: Phaser.GameObjects.Text;
   private comboMeter!: Phaser.GameObjects.Graphics;
   private wordComplexityIndicator!: Phaser.GameObjects.Text;
+  private microphoneIndicator!: Phaser.GameObjects.Graphics;
+  private speechPrompt!: Phaser.GameObjects.Text;
+  private pronunciationHelp!: Phaser.GameObjects.Text;
+  private criticalHitIndicator!: Phaser.GameObjects.Text;
+  private countdownBar!: Phaser.GameObjects.Graphics;
+  private countdownTween?: Phaser.Tweens.Tween;
 
   constructor(scene: Phaser.Scene, x: number, y: number, combatSystem: CombatSystem) {
     super(scene, x, y);
@@ -88,18 +94,70 @@ export class CombatUI extends Phaser.GameObjects.Container {
     this.healthText.setOrigin(0.5);
     this.add(this.healthText);
 
-    // Create current casting word display
-    this.castingWord = this.scene.add.text(0, 180, '', {
-      fontSize: '28px',
+    // Create current casting word display (hidden - now handled by dialog)
+    this.castingWord = this.scene.add.text(0, -100, '', {
+      fontSize: '36px',
       color: '#ffffff',
-      fontFamily: 'Arial',
+      fontFamily: 'Arial Black',
       stroke: '#000000',
-      strokeThickness: 3,
-      backgroundColor: '#000000aa',
-      padding: { left: 10, right: 10, top: 5, bottom: 5 }
+      strokeThickness: 4,
+      backgroundColor: '#000000cc',
+      padding: { left: 15, right: 15, top: 10, bottom: 10 }
     });
     this.castingWord.setOrigin(0.5);
+    this.castingWord.setAlpha(0); // Hidden by default
     this.add(this.castingWord);
+
+    // Create microphone indicator
+    this.microphoneIndicator = this.scene.add.graphics();
+    this.microphoneIndicator.x = -150;
+    this.microphoneIndicator.y = 180;
+    this.add(this.microphoneIndicator);
+
+    // Create speech prompt
+    this.speechPrompt = this.scene.add.text(0, 220, 'Press SPACE to speak', {
+      fontSize: '18px',
+      color: '#00ff00',
+      fontFamily: 'Arial',
+      stroke: '#000000',
+      strokeThickness: 2
+    });
+    this.speechPrompt.setOrigin(0.5);
+    this.speechPrompt.setAlpha(0);
+    this.add(this.speechPrompt);
+
+    // Create pronunciation help text
+    this.pronunciationHelp = this.scene.add.text(0, 250, '', {
+      fontSize: '16px',
+      color: '#ffff00',
+      fontFamily: 'Arial',
+      stroke: '#000000',
+      strokeThickness: 2,
+      backgroundColor: '#000000aa',
+      padding: { left: 8, right: 8, top: 4, bottom: 4 }
+    });
+    this.pronunciationHelp.setOrigin(0.5);
+    this.pronunciationHelp.setAlpha(0);
+    this.add(this.pronunciationHelp);
+
+    // Create critical hit indicator
+    this.criticalHitIndicator = this.scene.add.text(0, -20, '', {
+      fontSize: '32px',
+      color: '#ffd700',
+      fontFamily: 'Arial Black',
+      stroke: '#000000',
+      strokeThickness: 4
+    });
+    this.criticalHitIndicator.setOrigin(0.5);
+    this.criticalHitIndicator.setAlpha(0);
+    this.add(this.criticalHitIndicator);
+
+    // Create countdown timer bar (now handled by dialog)
+    this.countdownBar = this.scene.add.graphics();
+    this.countdownBar.x = -100;
+    this.countdownBar.y = 200;
+    this.countdownBar.setAlpha(0); // Always hidden
+    this.add(this.countdownBar);
 
     this.updateHealthBar();
   }
@@ -418,5 +476,297 @@ export class CombatUI extends Phaser.GameObjects.Container {
         duration: 500
       });
     });
+  }
+
+  public showSpeechPrompt(): void {
+    this.speechPrompt.setAlpha(1);
+
+    // Pulsing animation
+    this.scene.tweens.add({
+      targets: this.speechPrompt,
+      scaleX: 1.1,
+      scaleY: 1.1,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+  }
+
+  public hideSpeechPrompt(): void {
+    this.scene.tweens.killTweensOf(this.speechPrompt);
+    this.speechPrompt.setScale(1);
+    this.speechPrompt.setAlpha(0);
+  }
+
+  public showMicrophoneListening(): void {
+    this.microphoneIndicator.clear();
+
+    // Draw animated microphone
+    this.microphoneIndicator.fillStyle(0xff0000);
+    this.microphoneIndicator.fillCircle(0, 0, 12);
+
+    this.microphoneIndicator.lineStyle(3, 0xffffff);
+    this.microphoneIndicator.strokeCircle(0, 0, 12);
+
+    // Pulsing animation
+    this.scene.tweens.add({
+      targets: this.microphoneIndicator,
+      scaleX: 1.2,
+      scaleY: 1.2,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+  }
+
+  public hideMicrophoneIndicator(): void {
+    this.scene.tweens.killTweensOf(this.microphoneIndicator);
+    this.microphoneIndicator.setScale(1);
+    this.microphoneIndicator.clear();
+  }
+
+  public showPronunciationHelp(message: string): void {
+    this.pronunciationHelp.setText(message);
+    this.pronunciationHelp.setAlpha(1);
+
+    // Gentle fade in/out
+    this.scene.tweens.add({
+      targets: this.pronunciationHelp,
+      alpha: { from: 0, to: 1 },
+      duration: 300
+    });
+  }
+
+  public showPhoneticBreakdown(word: string, highlightedPart?: string, partIndex?: number): void {
+    let displayText = word;
+
+    if (highlightedPart && partIndex !== undefined) {
+      // Create highlighted version of the word
+      const parts = this.breakWordForDisplay(word);
+      displayText = parts.map((part, index) => {
+        if (index === partIndex) {
+          return `[${part}]`; // Brackets around highlighted part
+        }
+        return part;
+      }).join('');
+    }
+
+    this.castingWord.setText(displayText);
+    this.castingWord.setColor('#ffff00'); // Bright yellow for lesson mode
+
+    // Pulsing effect for highlighted part
+    this.scene.tweens.add({
+      targets: this.castingWord,
+      scaleX: 1.1,
+      scaleY: 1.1,
+      duration: 400,
+      yoyo: true,
+      ease: 'Sine.easeInOut'
+    });
+  }
+
+  private breakWordForDisplay(word: string): string[] {
+    // Simple breakdown for display purposes
+    const patterns = [
+      /ch|sh|th|wh|ph/,     // digraphs
+      /bl|br|cl|cr|dr|fl|fr|gl|gr|pl|pr|sc|sk|sl|sm|sn|sp|st|sw|tr|tw/, // blends
+      /ai|ay|ea|ee|ie|oa|oo|ou|ow/, // vowel teams
+      /[a-z]/               // single letters
+    ];
+
+    const parts: string[] = [];
+    let remaining = word.toLowerCase();
+
+    while (remaining.length > 0) {
+      let matched = false;
+
+      for (const pattern of patterns) {
+        const match = remaining.match(pattern);
+        if (match && match.index === 0) {
+          parts.push(match[0]);
+          remaining = remaining.slice(match[0].length);
+          matched = true;
+          break;
+        }
+      }
+
+      if (!matched) {
+        parts.push(remaining[0]);
+        remaining = remaining.slice(1);
+      }
+    }
+
+    return parts;
+  }
+
+  public hidePronunciationHelp(): void {
+    this.scene.tweens.add({
+      targets: this.pronunciationHelp,
+      alpha: 0,
+      duration: 500
+    });
+  }
+
+  public showCriticalHit(): void {
+    this.criticalHitIndicator.setText('💥 CRITICAL HIT! 💥');
+    this.criticalHitIndicator.setAlpha(1);
+
+    // Explosive animation
+    this.scene.tweens.add({
+      targets: this.criticalHitIndicator,
+      scaleX: { from: 0, to: 1.5 },
+      scaleY: { from: 0, to: 1.5 },
+      duration: 300,
+      ease: 'Back.out'
+    });
+
+    // Flash gold color
+    const originalColor = this.criticalHitIndicator.style.color;
+    this.scene.tweens.add({
+      targets: this.criticalHitIndicator.style,
+      duration: 150,
+      repeat: 3,
+      yoyo: true,
+      onUpdate: () => {
+        const phase = this.scene.tweens.getTweensOf(this.criticalHitIndicator.style)[0].progress;
+        const color = phase > 0.5 ? '#ffffff' : '#ffd700';
+        this.criticalHitIndicator.setColor(color);
+      }
+    });
+
+    // Fade out after celebration
+    this.scene.time.delayedCall(2000, () => {
+      this.scene.tweens.add({
+        targets: this.criticalHitIndicator,
+        alpha: 0,
+        scaleX: 0.5,
+        scaleY: 0.5,
+        duration: 500,
+        onComplete: () => {
+          this.criticalHitIndicator.setScale(1);
+          this.criticalHitIndicator.setColor(originalColor);
+        }
+      });
+    });
+  }
+
+  public showTimeout(): void {
+    const timeoutText = this.scene.add.text(0, 280, '⏰ Timeout! Try again', {
+      fontSize: '20px',
+      color: '#ff8800',
+      fontFamily: 'Arial',
+      stroke: '#000000',
+      strokeThickness: 2,
+      backgroundColor: '#000000aa',
+      padding: { left: 8, right: 8, top: 4, bottom: 4 }
+    });
+    timeoutText.setOrigin(0.5);
+    this.add(timeoutText);
+
+    // Fade in and out
+    this.scene.tweens.add({
+      targets: timeoutText,
+      alpha: { from: 0, to: 1 },
+      duration: 300
+    });
+
+    this.scene.time.delayedCall(2000, () => {
+      this.scene.tweens.add({
+        targets: timeoutText,
+        alpha: 0,
+        duration: 500,
+        onComplete: () => timeoutText.destroy()
+      });
+    });
+  }
+
+  public showSpeechError(message: string): void {
+    const errorText = this.scene.add.text(0, 280, `❌ ${message}`, {
+      fontSize: '18px',
+      color: '#ff0000',
+      fontFamily: 'Arial',
+      stroke: '#ffffff',
+      strokeThickness: 2,
+      backgroundColor: '#000000aa',
+      padding: { left: 8, right: 8, top: 4, bottom: 4 }
+    });
+    errorText.setOrigin(0.5);
+    this.add(errorText);
+
+    // Shake and fade
+    this.scene.tweens.add({
+      targets: errorText,
+      x: { from: -5, to: 5 },
+      duration: 50,
+      repeat: 5,
+      yoyo: true
+    });
+
+    this.scene.time.delayedCall(3000, () => {
+      this.scene.tweens.add({
+        targets: errorText,
+        alpha: 0,
+        duration: 500,
+        onComplete: () => errorText.destroy()
+      });
+    });
+  }
+
+  public startCountdownTimer(durationMs: number): void {
+    this.stopCountdownTimer(); // Stop any existing timer
+
+    this.countdownBar.clear();
+    this.countdownBar.setAlpha(1);
+
+    // Draw initial full bar
+    this.countdownBar.fillStyle(0x00ff00); // Green
+    this.countdownBar.fillRect(0, 0, 200, 8);
+
+    // Border
+    this.countdownBar.lineStyle(2, 0xffffff);
+    this.countdownBar.strokeRect(0, 0, 200, 8);
+
+    // Animate the countdown
+    this.countdownTween = this.scene.tweens.add({
+      targets: { progress: 1 },
+      progress: 0,
+      duration: durationMs,
+      ease: 'Linear',
+      onUpdate: (tween) => {
+        const progress = tween.getValue() || 0;
+        this.countdownBar.clear();
+
+        // Calculate color based on progress
+        let fillColor = 0x00ff00; // Green
+        if (progress < 0.5) fillColor = 0xffaa00; // Orange
+        if (progress < 0.25) fillColor = 0xff0000; // Red
+
+        // Draw progress bar
+        this.countdownBar.fillStyle(fillColor);
+        this.countdownBar.fillRect(0, 0, 200 * progress, 8);
+
+        // Border
+        this.countdownBar.lineStyle(2, 0xffffff);
+        this.countdownBar.strokeRect(0, 0, 200, 8);
+      },
+      onComplete: () => {
+        this.hideCountdownTimer();
+      }
+    });
+  }
+
+  public stopCountdownTimer(): void {
+    if (this.countdownTween) {
+      this.countdownTween.destroy();
+      this.countdownTween = undefined;
+    }
+  }
+
+  public hideCountdownTimer(): void {
+    this.stopCountdownTimer();
+    this.countdownBar.setAlpha(0);
+    this.countdownBar.clear();
   }
 }
