@@ -71,6 +71,14 @@ export class GameScene extends Phaser.Scene {
       this.streamingService = new StreamingSpeechService()
       this.pronunciationHelp = new PronunciationHelpService()
       console.log('Speech services initialized successfully')
+
+      // Pre-warm the MediaRecorder to avoid first-recording delays
+      // This happens asynchronously in the background
+      this.streamingService.preWarmRecorder().then(() => {
+        console.log('✅ MediaRecorder pre-warming complete')
+      }).catch(error => {
+        console.warn('⚠️ MediaRecorder pre-warming failed (will retry on first use):', error)
+      })
     } catch (error) {
       console.error('Failed to initialize speech services:', error)
       // Game can still work without speech recognition
@@ -1046,15 +1054,15 @@ export class GameScene extends Phaser.Scene {
 
     // Check if spacebar is already being held down
     if (this.isSpaceKeyDown) {
-      console.log('🎤 Spacebar already held - will start recording after initialization delay')
-      // Safari needs more time for MediaRecorder to be ready on first use
-      // 300ms seems to be the sweet spot for Safari
-      const initDelay = 300
+      console.log('🎤 Spacebar already held - starting recording immediately (pre-warmed)')
+      // Since MediaRecorder is pre-warmed, we can start immediately!
+      // Just a tiny delay to ensure dialog is fully rendered
+      const initDelay = 50
 
       this.time.delayedCall(initDelay, () => {
         // Check spacebar is still held
         if (this.isSpaceKeyDown && this.castingDialog && !this.isListeningForSpeech) {
-          console.log(`🎤 Starting recording after ${initDelay}ms initialization delay`)
+          console.log(`🎤 Starting recording after ${initDelay}ms render delay`)
           this.startRecordingForWord()
         } else {
           console.log('⚠️ Spacebar released during initialization - not starting recording')
@@ -1962,6 +1970,12 @@ export class GameScene extends Phaser.Scene {
     // Clean up any remaining timers
     this.time.removeAllEvents()
 
-    console.log('GameScene shutdown - cleaned up input handlers')
+    // Clean up pre-warmed MediaRecorder and release microphone access
+    if (this.streamingService) {
+      this.streamingService.cleanupPreWarmedRecorder()
+      console.log('🧹 Cleaned up pre-warmed MediaRecorder')
+    }
+
+    console.log('GameScene shutdown - cleaned up input handlers and media resources')
   }
 }

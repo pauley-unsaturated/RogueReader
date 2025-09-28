@@ -16,6 +16,7 @@ export class StreamingSpeechService {
   private chunkInterval: number | null = null
   private recognizedWords: Set<string> = new Set()
   private accumulatedAudio: Blob[] = []
+  private isPreWarmed: boolean = false
 
   constructor() {
     this.apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || ''
@@ -24,11 +25,18 @@ export class StreamingSpeechService {
     }
   }
 
-  async startStreaming(options: StreamingOptions): Promise<void> {
+  /**
+   * Pre-warm the MediaRecorder by creating it once at game start.
+   * This eliminates the initialization delay on first recording.
+   */
+  async preWarmRecorder(): Promise<void> {
+    if (this.isPreWarmed) {
+      console.log('🔥 MediaRecorder already pre-warmed')
+      return
+    }
+
     try {
-      // Detect browser
-      const userAgent = navigator.userAgent
-      const isSafari = userAgent.includes('Safari') && !userAgent.includes('Chrome')
+      console.log('🔥 Pre-warming MediaRecorder...')
 
       // Get microphone stream
       this.currentStream = await navigator.mediaDevices.getUserMedia({
@@ -41,6 +49,45 @@ export class StreamingSpeechService {
         }
       })
 
+      // Determine best audio format
+      const mimeType = this.getBestMimeType()
+
+      // Create MediaRecorder but don't start it
+      this.mediaRecorder = new MediaRecorder(this.currentStream, {
+        mimeType: mimeType
+      })
+
+      console.log(`🔥 MediaRecorder pre-warmed with mimeType: ${mimeType}`)
+      console.log(`🔥 MediaRecorder state: ${this.mediaRecorder.state}`)
+
+      // Set up event handlers
+      this.mediaRecorder.ondataavailable = (event) => {
+        console.log(`📼 Audio chunk received: ${event.data.size} bytes`)
+        if (event.data.size > 0) {
+          this.audioChunks.push(event.data)
+          this.accumulatedAudio.push(event.data)
+        }
+      }
+
+      this.mediaRecorder.onstop = () => {
+        console.log(`🏁 Recording stopped - total chunks: ${this.accumulatedAudio.length}`)
+      }
+
+      this.mediaRecorder.onerror = (event) => {
+        console.error('🚨 MediaRecorder error:', event)
+      }
+
+      this.isPreWarmed = true
+      console.log('✅ MediaRecorder successfully pre-warmed and ready')
+
+    } catch (error) {
+      console.error('❌ Failed to pre-warm MediaRecorder:', error)
+      // Don't set isPreWarmed to true so it will try again later
+    }
+  }
+
+  async startStreaming(options: StreamingOptions): Promise<void> {
+    try {
       console.log('🎤 Streaming started for word:', options.targetWord)
 
       // Reset state
@@ -49,39 +96,63 @@ export class StreamingSpeechService {
       this.recognizedWords.clear()
       this.isRecording = true
 
-      // Determine best audio format
-      const mimeType = this.getBestMimeType()
+      // Check if we have a pre-warmed recorder
+      if (this.isPreWarmed && this.mediaRecorder && this.currentStream) {
+        console.log('🔥 Using pre-warmed MediaRecorder')
+        // Recorder is already set up and ready!
+      } else {
+        console.log('⚠️ MediaRecorder not pre-warmed, creating now...')
 
-      this.mediaRecorder = new MediaRecorder(this.currentStream, {
-        mimeType: mimeType
-      })
+        // Fallback: Create recorder on demand (shouldn't happen if pre-warming worked)
+        // Get microphone stream
+        this.currentStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 16000,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        })
 
-      console.log(`🎤 MediaRecorder created with mimeType: ${mimeType}`)
-      console.log(`🎤 MediaRecorder state: ${this.mediaRecorder.state}`)
+        // Determine best audio format
+        const mimeType = this.getBestMimeType()
 
-      // Collect audio chunks
-      this.mediaRecorder.ondataavailable = (event) => {
-        console.log(`📼 Audio chunk received: ${event.data.size} bytes`)
-        if (event.data.size > 0) {
-          this.audioChunks.push(event.data)
-          this.accumulatedAudio.push(event.data) // Keep full recording
-        } else if (this.audioChunks.length === 0 && this.mediaRecorder?.state === 'recording') {
-          console.warn('⚠️ Received empty chunk with no previous data - mic may not be ready')
+        this.mediaRecorder = new MediaRecorder(this.currentStream, {
+          mimeType: mimeType
+        })
+
+        console.log(`🎤 MediaRecorder created with mimeType: ${mimeType}`)
+        console.log(`🎤 MediaRecorder state: ${this.mediaRecorder.state}`)
+
+        // Collect audio chunks
+        this.mediaRecorder.ondataavailable = (event) => {
+          console.log(`📼 Audio chunk received: ${event.data.size} bytes`)
+          if (event.data.size > 0) {
+            this.audioChunks.push(event.data)
+            this.accumulatedAudio.push(event.data)
+          } else if (this.audioChunks.length === 0 && this.mediaRecorder?.state === 'recording') {
+            console.warn('⚠️ Received empty chunk with no previous data - mic may not be ready')
+          }
+        }
+
+        // Handle recording stop
+        this.mediaRecorder.onstop = () => {
+          console.log(`🏁 Recording stopped - total chunks: ${this.accumulatedAudio.length}`)
+          if (this.accumulatedAudio.length === 0) {
+            console.warn('🚨 MediaRecorder stopped but no audio chunks were captured!')
+          }
+        }
+
+        // Add error handler
+        this.mediaRecorder.onerror = (event) => {
+          console.error('🚨 MediaRecorder error:', event)
         }
       }
 
-      // Handle recording stop to ensure final chunk is captured
-      this.mediaRecorder.onstop = () => {
-        console.log(`🏁 Recording stopped - total chunks: ${this.accumulatedAudio.length}`)
-        if (this.accumulatedAudio.length === 0) {
-          console.warn('🚨 MediaRecorder stopped but no audio chunks were captured!')
-        }
-      }
-
-      // Add error handler
-      this.mediaRecorder.onerror = (event) => {
-        console.error('🚨 MediaRecorder error:', event)
-      }
+      // Detect browser
+      const userAgent = navigator.userAgent
+      const isSafari = userAgent.includes('Safari') && !userAgent.includes('Chrome')
 
       // Start recording with reasonable timeslice
       // Safari needs larger timeslices
@@ -155,10 +226,40 @@ export class StreamingSpeechService {
       this.mediaRecorder.stop()
     }
 
-    if (this.currentStream) {
+    // Don't stop the stream if it's pre-warmed - we want to keep it alive
+    // Only stop it if we're fully cleaning up
+    if (!this.isPreWarmed && this.currentStream) {
       this.currentStream.getTracks().forEach(track => track.stop())
       this.currentStream = null
     }
+  }
+
+  /**
+   * Fully cleanup the pre-warmed recorder and release microphone access.
+   * Call this when the game ends or when switching scenes.
+   */
+  cleanupPreWarmedRecorder(): void {
+    console.log('🧹 Cleaning up pre-warmed MediaRecorder')
+
+    if (this.mediaRecorder) {
+      if (this.mediaRecorder.state !== 'inactive') {
+        this.mediaRecorder.stop()
+      }
+      this.mediaRecorder = null
+    }
+
+    if (this.currentStream) {
+      this.currentStream.getTracks().forEach(track => {
+        track.stop()
+        console.log('🎤 Microphone track stopped')
+      })
+      this.currentStream = null
+    }
+
+    this.isPreWarmed = false
+    this.isRecording = false
+    this.audioChunks = []
+    this.accumulatedAudio = []
   }
 
   private getBestMimeType(): string {
