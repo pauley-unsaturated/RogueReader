@@ -11,6 +11,7 @@ import { WordManager } from '@/systems/WordManager'
 import { SpeechRecognitionResult } from '@/services/SpeechRecognitionService'
 import { PronunciationHelpService } from '@/services/PronunciationHelpService'
 import { StreamingSpeechService } from '@/services/StreamingSpeechService'
+import { SpellCostSystem } from '@/systems/SpellCostSystem'
 
 export class GameScene extends Phaser.Scene {
   private player!: Player
@@ -28,6 +29,7 @@ export class GameScene extends Phaser.Scene {
   private comboWords: string[] = []
   private pendingComboResults: SpeechRecognitionResult[] = []
   private isInCombat: boolean = false
+  private isSpellCasting: boolean = false // Track when spell dialog is active
   private isGameOver: boolean = false
   private streamingService: StreamingSpeechService | null = null
   private pronunciationHelp: PronunciationHelpService | null = null
@@ -35,7 +37,7 @@ export class GameScene extends Phaser.Scene {
   private isGamePaused: boolean = false
   private recordingEndTimer: Phaser.Time.TimerEvent | null = null
   private isSpaceKeyDown: boolean = false // Track actual key state to prevent auto-repeat spam
-  private escapeKeyPressed: boolean = false // Prevent ESC spam
+  private escapeKeyPressed: boolean = false // Track ESC key state
 
   constructor() {
     super({ key: 'GameScene' })
@@ -214,30 +216,32 @@ export class GameScene extends Phaser.Scene {
   private setupInput(): void {
     console.log('Setting up input handlers...')
 
-    // Test if keyboard input is working at all
+    // Debug: Log all keydown events (comment out in production)
+    // Uncomment for debugging input issues
+    /*
     this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
-      console.log(`Key pressed: ${event.code}`)
+      // Only log non-movement keys to reduce console spam
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) {
+        console.log(`Key pressed: code="${event.code}", key="${event.key}"`)
+      }
     })
+    */
 
-    // Movement input with explicit logging
+    // Movement input
     this.input.keyboard!.on('keydown-UP', () => {
       if (this.isGameOver) return
-      console.log('UP arrow pressed!')
       this.movePlayer(0, -1)
     })
     this.input.keyboard!.on('keydown-DOWN', () => {
       if (this.isGameOver) return
-      console.log('DOWN arrow pressed!')
       this.movePlayer(0, 1)
     })
     this.input.keyboard!.on('keydown-LEFT', () => {
       if (this.isGameOver) return
-      console.log('LEFT arrow pressed!')
       this.movePlayer(-1, 0)
     })
     this.input.keyboard!.on('keydown-RIGHT', () => {
       if (this.isGameOver) return
-      console.log('RIGHT arrow pressed!')
       this.movePlayer(1, 0)
     })
 
@@ -260,6 +264,13 @@ export class GameScene extends Phaser.Scene {
         console.log('📟 Cancelling recording end delay - user pressed spacebar again')
         this.recordingEndTimer.destroy()
         this.recordingEndTimer = null
+
+        // IMPORTANT: Process the recording immediately when cancelled
+        // Otherwise we get stuck in recording state
+        if (this.isListeningForSpeech && this.castingDialog) {
+          console.log('⚡ Processing interrupted recording immediately')
+          this.stopRecordingAndProcess()
+        }
       }
 
       if (this.isInCombat) {
@@ -304,7 +315,41 @@ export class GameScene extends Phaser.Scene {
       }
     })
 
-    // Escape or Shift key to exit casting dialog
+    // Enter/Return key to complete spell casting and fire the combo
+    // Note: Some keyboards use ENTER, others use RETURN
+    let castSpellProcessing = false // Prevent double-firing
+    const handleCastSpell = () => {
+      // Don't process if game is over or already processing
+      if (this.isGameOver || castSpellProcessing) return
+
+      if (this.castingDialog && this.castingDialog.getActive()) {
+        castSpellProcessing = true
+        console.log('⚡ ENTER/RETURN key pressed - casting spell with current combo!')
+
+        // Get the current combo results from the dialog
+        const comboResults = this.castingDialog.getComboResults()
+
+        if (comboResults.length > 0) {
+          // Have at least one word - cast the spell
+          this.handleComboComplete(comboResults)
+        } else {
+          console.log('❌ No words in combo - need at least one word to cast')
+        }
+
+        // Reset flag after a short delay
+        this.time.delayedCall(100, () => {
+          castSpellProcessing = false
+        })
+      }
+    }
+
+    // Use ONLY the string-based event for Enter key (not addKey to avoid double-input)
+    this.input.keyboard!.on('keydown-ENTER', () => {
+      console.log('ENTER key pressed - casting spell')
+      handleCastSpell()
+    })
+
+    // Escape key to exit casting dialog - ALWAYS works
     this.input.keyboard!.on('keydown-ESC', () => {
       // Don't process ESC if game is over
       if (this.isGameOver) return
@@ -314,9 +359,8 @@ export class GameScene extends Phaser.Scene {
         console.log('🔁 Ignoring repeated ESC press')
         return
       }
-      this.escapeKeyPressed = true
 
-      console.log('ESC pressed - closing dialog')
+      console.log('ESC pressed - force closing dialog')
       if (this.castingDialog) {
         console.log('🚪 EMERGENCY CLOSE: Force closing dialog via ESC')
 
@@ -326,14 +370,24 @@ export class GameScene extends Phaser.Scene {
           this.recordingEndTimer = null
         }
 
+        // Force reset all recording state
+        this.isListeningForSpeech = false
+        this.isSpaceKeyDown = false
+
+        // Stop streaming if active
+        if (this.streamingService) {
+          this.streamingService.stopStreaming()
+        }
+
         // Force close regardless of state
         this.closeCastingDialog()
-      }
 
-      // Reset ESC flag after brief delay
-      this.time.delayedCall(500, () => {
-        this.escapeKeyPressed = false
-      })
+        // Clear the ESC flag after a moment
+        this.escapeKeyPressed = true
+        this.time.delayedCall(500, () => {
+          this.escapeKeyPressed = false
+        })
+      }
     })
 
     this.input.keyboard!.on('keydown-SHIFT', () => {
@@ -449,7 +503,8 @@ export class GameScene extends Phaser.Scene {
     })
 
     this.combatSystem.on('combatEnded', (data: any) => {
-      this.isInCombat = false
+      console.log('📢 combatEnded event received')
+      // Don't immediately set isInCombat to false - check for nearby enemies first
       this.hideCombatPrompt()
 
       // Restore some mana after combat
@@ -459,6 +514,34 @@ export class GameScene extends Phaser.Scene {
 
       if (data.maxCombo > 0) {
         this.showReward(data.bonusReward, 'Combo Bonus!')
+      }
+
+      // Check if there are still enemies nearby
+      const nearbyEnemies = this.enemies.filter(enemy => {
+        const pos = enemy.getGridPosition()
+        const distance = Math.abs(pos.x - this.player.gridX) + Math.abs(pos.y - this.player.gridY)
+        const alive = enemy.isAliveStatus()
+        if (distance <= 5) {
+          console.log(`  Enemy at (${pos.x}, ${pos.y}): distance=${distance}, alive=${alive}`)
+        }
+        return distance <= 5 && alive
+      })
+
+      console.log(`📊 Combat end check: ${nearbyEnemies.length} alive enemies within range`)
+
+      if (nearbyEnemies.length > 0) {
+        console.log(`⚔️ More enemies nearby (${nearbyEnemies.length}) - continuing combat`)
+        // Re-register enemies with combat system
+        nearbyEnemies.forEach(enemy => {
+          this.combatSystem.addEnemy(enemy.getCombatEntity())
+          enemy.startCombat(this.player.getGridPosition())
+        })
+        // Keep isInCombat true
+        this.isInCombat = true
+      } else {
+        console.log('✅ No more enemies nearby - combat truly ended')
+        console.log(`  Setting isInCombat = false, isSpellCasting = ${this.isSpellCasting}`)
+        this.isInCombat = false
       }
     })
 
@@ -483,7 +566,13 @@ export class GameScene extends Phaser.Scene {
 
     // Listen for enemy attacks
     this.events.on('enemyAttack', (data: any) => {
+      // Update BOTH combat system AND player entity for proper HP bar display
       this.combatSystem.takeDamage(data.damage)
+      const isDead = this.player.takeDamage(data.damage) // This emits 'update-health' event for UI
+
+      if (isDead) {
+        console.log('💀 Player defeated!')
+      }
     })
 
     // Listen for enemy deaths
@@ -514,7 +603,8 @@ export class GameScene extends Phaser.Scene {
               id: `enemy_${index}_${i}`,
               name: `${enemyType} ${i + 1}`,
               type: enemyType as any,
-              level: Math.min(this.currentFloor, 5),
+              level: this.calculateEnemyLevel(),
+              currentFloor: this.currentFloor,
               gridPosition: { x: enemyX, y: enemyY }
             }
 
@@ -532,6 +622,7 @@ export class GameScene extends Phaser.Scene {
           name: 'Boss',
           type: 'demon',
           level: this.currentFloor + 2,
+          currentFloor: this.currentFloor,
           gridPosition: { x: bossX, y: bossY },
           health: 150,
           damage: 20
@@ -545,9 +636,38 @@ export class GameScene extends Phaser.Scene {
     // Don't register enemies yet - we'll do it when combat starts
   }
 
+  private calculateEnemyLevel(): number {
+    // Very gradual level progression for beginners
+    if (this.currentFloor <= 2) {
+      return 1 // Always level 1 for K-2nd grade (floors 1-2)
+    } else if (this.currentFloor <= 4) {
+      return Math.random() < 0.7 ? 1 : 2 // Mostly level 1, some level 2 for grades 3-4
+    } else if (this.currentFloor <= 6) {
+      return Math.random() < 0.5 ? 2 : 3 // Mix of level 2-3 for grades 5-6
+    } else {
+      return Math.min(Math.floor(this.currentFloor / 2), 10) // Standard progression for higher grades
+    }
+  }
+
   private getRandomEnemyType(): string {
-    const types = ['goblin', 'skeleton', 'bat', 'slime', 'orc']
-    return types[Math.floor(Math.random() * types.length)]
+    // Use only easy enemies for beginners
+    if (this.currentFloor <= 2) {
+      // K-2nd grade: Only the weakest enemies
+      const easyTypes = ['bat', 'slime'] // Bat has lowest health, slime has lowest damage
+      return easyTypes[Math.floor(Math.random() * easyTypes.length)]
+    } else if (this.currentFloor <= 4) {
+      // 3rd-4th grade: Add goblin (slightly stronger but manageable)
+      const beginnerTypes = ['bat', 'slime', 'goblin']
+      return beginnerTypes[Math.floor(Math.random() * beginnerTypes.length)]
+    } else if (this.currentFloor <= 6) {
+      // 5th-6th grade: Add skeleton (more defensive)
+      const intermediateTypes = ['bat', 'slime', 'goblin', 'skeleton']
+      return intermediateTypes[Math.floor(Math.random() * intermediateTypes.length)]
+    } else {
+      // 7th+ grade: Full enemy variety including tough orcs
+      const allTypes = ['goblin', 'skeleton', 'bat', 'slime', 'orc']
+      return allTypes[Math.floor(Math.random() * allTypes.length)]
+    }
   }
 
   private showCombatPrompt(): void {
@@ -583,21 +703,8 @@ export class GameScene extends Phaser.Scene {
       console.log('🎯 Speech modifiers:', speechModifiers)
     }
 
-    // Calculate mana cost based on word complexity
-    const complexity = this.combatSystem['calculateWordComplexity'](word)
-    const manaCost = Math.max(1, Math.floor(complexity * 2)) // 2-10 mana per spell
-
-    console.log(`💙 Spell mana cost: ${manaCost} (player has ${this.player.mana}/${this.player.maxMana})`)
-
-    // Check if player has enough mana
-    if (this.player.mana < manaCost) {
-      console.log('❌ Not enough mana to cast spell!')
-      // Could show "Out of Mana" message here
-      return
-    }
-
-    // Consume mana before casting
-    this.player.useMana(manaCost)
+    // MP is now consumed when starting the spell dialog, not per word
+    // This allows multiple attempts with the same MP investment
 
     // Cast the spell with speech results
     console.log('⚡ Calling combatSystem.castSpell...')
@@ -610,8 +717,9 @@ export class GameScene extends Phaser.Scene {
       this.combatUI.showCriticalHit()
     }
 
-    // Show complexity bonus (reuse complexity from mana calculation)
-    this.combatUI.showWordComplexity(word, complexity)
+    // Show complexity bonus
+    const wordComplexity = this.combatSystem['calculateWordComplexity'](word)
+    this.combatUI.showWordComplexity(word, wordComplexity)
 
     // Record word attempt for spaced repetition
     const readTime = speechResult?.isTimeout ? 5000 : 2000
@@ -648,17 +756,218 @@ export class GameScene extends Phaser.Scene {
     this.isSpaceKeyDown = false
     this.escapeKeyPressed = false
 
+    // Clear spell casting flag to allow combat to restart if needed
+    this.isSpellCasting = false
+    console.log('🎭 Spell casting ended - combat restart allowed')
+
+    // Don't resume enemies here - let the dialog's onClose callback handle it
+    // This ensures enemies stay paused for the entire spell sequence
+
     // Clear dialog reference (dialog handles its own destruction)
     this.castingDialog = null
+
+    // Safety check: If combat ended but we're stuck, ensure we can restart
+    if (!this.isInCombat) {
+      console.log('🔄 Combat ended - ensuring clean state for next combat')
+      this.isSpellCasting = false  // Double-ensure this is cleared
+    }
   }
 
   private closeCastingDialog(): void {
     if (this.castingDialog) {
       console.log('🚪 Manually closing casting dialog')
-      // Immediately clean up without waiting for animation
-      this.castingDialog.destroy()
-      this.cleanupCastingDialog()
+      // Use close() for animated removal (which calls destroy and onClose callback)
+      this.castingDialog.close()
+      // Note: The dialog's onClose callback will call cleanupCastingDialog()
     }
+  }
+
+  private pauseEnemiesForSpellCasting(): void {
+    // Pause enemies for grades K-4 during spell casting
+    if (this.currentFloor <= 4) {
+      console.log('⏸️ Pausing enemies for spell casting (Grade K-4)');
+      this.enemies.forEach(enemy => {
+        enemy.stopCombat();
+        // Stop any enemy tweens/animations
+        this.tweens.killTweensOf(enemy);
+      });
+    }
+  }
+
+  private resumeEnemiesAfterSpellCasting(): void {
+    // Resume enemies after spell casting (only for grades K-4 that were paused)
+    if (this.currentFloor <= 4 && this.isInCombat) {
+      console.log('▶️ Resuming enemies after spell casting (Grade K-4)');
+      this.enemies.forEach(enemy => {
+        if (enemy.isAliveStatus()) {
+          enemy.startCombat(this.player.getGridPosition());
+        }
+      });
+    }
+  }
+
+  private showSpellFiringAnimation(comboCount: number, comboMultiplier: number): void {
+    console.log(`✨ Spell firing animation - Combo: ${comboCount}x, Multiplier: ${comboMultiplier}x`)
+
+    const playerPos = this.player.getGridPosition()
+    const pixelX = playerPos.x * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2
+    const pixelY = playerPos.y * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2
+
+    // Base animation - magical glow around player
+    this.showMagicalGlow(pixelX, pixelY, comboCount)
+
+    // Escalating effects based on combo count
+    if (comboCount >= 2) {
+      this.showSparkles(pixelX, pixelY, comboCount)
+    }
+
+    if (comboCount >= 3) {
+      this.showMagicRings(pixelX, pixelY, comboCount)
+    }
+
+    if (comboCount >= 4) {
+      this.showLightningBurst(pixelX, pixelY, comboCount)
+    }
+
+    if (comboCount >= 5) {
+      this.showEpicAura(pixelX, pixelY, comboCount)
+    }
+
+    // Screen shake effect for high combos
+    if (comboCount >= 3) {
+      this.cameras.main.shake(100 + (comboCount * 50), 0.005 * comboCount)
+    }
+
+    // Play wizard casting animation
+    this.player.castSpell()
+  }
+
+  private showMagicalGlow(x: number, y: number, comboCount: number): void {
+    const glow = this.add.graphics()
+    const intensity = Math.min(comboCount * 0.3, 1)
+    const glowColor = comboCount >= 3 ? 0x9d4edd : 0x3b82f6 // Purple for high combos, blue for low
+
+    glow.fillStyle(glowColor, intensity)
+    glow.fillCircle(x, y, 20 + (comboCount * 5))
+    glow.setBlendMode(Phaser.BlendModes.ADD)
+
+    this.tweens.add({
+      targets: glow,
+      scaleX: 2 + (comboCount * 0.5),
+      scaleY: 2 + (comboCount * 0.5),
+      alpha: 0,
+      duration: 600,
+      ease: 'Power2',
+      onComplete: () => glow.destroy()
+    })
+  }
+
+  private showSparkles(x: number, y: number, comboCount: number): void {
+    const sparkleCount = Math.min(comboCount * 3, 12)
+
+    for (let i = 0; i < sparkleCount; i++) {
+      const sparkle = this.add.graphics()
+      const sparkleColor = 0xffd700 // Gold sparkles
+
+      sparkle.fillStyle(sparkleColor, 0.8)
+      sparkle.fillCircle(0, 0, 2)
+      sparkle.setPosition(
+        x + (Math.random() - 0.5) * 60,
+        y + (Math.random() - 0.5) * 60
+      )
+      sparkle.setBlendMode(Phaser.BlendModes.ADD)
+
+      this.tweens.add({
+        targets: sparkle,
+        y: sparkle.y - 30 - (Math.random() * 20),
+        alpha: 0,
+        scaleX: 0,
+        scaleY: 0,
+        duration: 800 + (Math.random() * 400),
+        ease: 'Power2',
+        onComplete: () => sparkle.destroy()
+      })
+    }
+  }
+
+  private showMagicRings(x: number, y: number, comboCount: number): void {
+    const ringCount = Math.min(Math.floor(comboCount / 2), 3)
+
+    for (let i = 0; i < ringCount; i++) {
+      const ring = this.add.graphics()
+      const ringColor = 0x8b5cf6 // Purple rings
+
+      ring.lineStyle(3, ringColor, 0.7)
+      ring.strokeCircle(x, y, 10)
+      ring.setBlendMode(Phaser.BlendModes.ADD)
+
+      this.tweens.add({
+        targets: ring,
+        scaleX: 3 + i,
+        scaleY: 3 + i,
+        alpha: 0,
+        duration: 1000,
+        delay: i * 150,
+        ease: 'Power2',
+        onComplete: () => ring.destroy()
+      })
+    }
+  }
+
+  private showLightningBurst(x: number, y: number, comboCount: number): void {
+    const boltCount = Math.min(comboCount, 8)
+
+    for (let i = 0; i < boltCount; i++) {
+      const bolt = this.add.graphics()
+      const boltColor = 0xf59e0b // Lightning yellow
+
+      const angle = (i / boltCount) * Math.PI * 2
+      const length = 40 + (comboCount * 5)
+      const endX = x + Math.cos(angle) * length
+      const endY = y + Math.sin(angle) * length
+
+      bolt.lineStyle(2, boltColor, 0.9)
+      bolt.beginPath()
+      bolt.moveTo(x, y)
+      bolt.lineTo(endX, endY)
+      bolt.strokePath()
+      bolt.setBlendMode(Phaser.BlendModes.ADD)
+
+      this.tweens.add({
+        targets: bolt,
+        alpha: 0,
+        duration: 300,
+        delay: Math.random() * 100,
+        ease: 'Power2',
+        onComplete: () => bolt.destroy()
+      })
+    }
+  }
+
+  private showEpicAura(x: number, y: number, comboCount: number): void {
+    // Epic rainbow aura for massive combos
+    const aura = this.add.graphics()
+
+    // Create rainbow gradient effect
+    const colors = [0xff6b6b, 0x4ecdc4, 0x45b7d1, 0x96ceb4, 0xffeaa7, 0xdda0dd]
+
+    colors.forEach((color, index) => {
+      aura.fillStyle(color, 0.3)
+      aura.fillCircle(x, y, 30 + (index * 8) + (comboCount * 2)) // Scale with combo count
+    })
+
+    aura.setBlendMode(Phaser.BlendModes.ADD)
+
+    this.tweens.add({
+      targets: aura,
+      scaleX: 4 + (comboCount * 0.5), // Bigger aura for higher combos
+      scaleY: 4 + (comboCount * 0.5),
+      alpha: 0,
+      rotation: Math.PI * 2,
+      duration: 1500,
+      ease: 'Power2',
+      onComplete: () => aura.destroy()
+    })
   }
 
   private showCastingDialog(): void {
@@ -672,6 +981,10 @@ export class GameScene extends Phaser.Scene {
       console.log(`🚫 Not in combat - cannot create dialog`)
       return
     }
+
+    // Mark that we're spell casting to prevent combat from restarting
+    this.isSpellCasting = true
+    console.log('🎭 Spell casting started - combat restart blocked')
 
     console.log(`📜 Creating new casting dialog`)
 
@@ -690,12 +1003,40 @@ export class GameScene extends Phaser.Scene {
     this.pendingComboResults = []
     this.currentWord = wordData.word
 
+    // Use SpellCostSystem to determine spell configuration
+    const spellConfig = SpellCostSystem.calculateSpellCost({
+      currentFloor: this.currentFloor,
+      playerMP: this.player.mana,
+      playerMaxMP: this.player.maxMana
+    });
+
+    // Check if player can afford to cast
+    if (!spellConfig.canCast) {
+      console.log(`❌ Cannot cast: ${spellConfig.reason}`);
+      // Show "Not enough mana" message
+      this.showNoManaMessage(spellConfig.reason || 'Not enough mana!');
+      // Clean up and wait for more MP
+      this.cleanupCastingDialog();
+      return;
+    }
+
+    // Consume MP upfront for this spell attempt
+    this.player.useMana(spellConfig.mpCost);
+    console.log(`💙 Consumed ${spellConfig.mpCost} MP for spell (${this.player.mana}/${this.player.maxMana} remaining)`);
+
+    const costDescription = SpellCostSystem.getSpellCostDescription(this.currentFloor);
+    console.log(`📚 Floor ${this.currentFloor}: Using ${spellConfig.useTriesMode ? 'TRIES' : 'TIMER'} mode (${costDescription})`);
+
     // Create and show the casting dialog
     this.castingDialog = new CastingDialog(this, {
       spellName: spellName,
-      duration: 10000, // 10 second timer (gives more time for API responses)
+      duration: spellConfig.duration,
+      maxTries: spellConfig.maxTries,
+      useTriesMode: spellConfig.useTriesMode,
       onTimerEnd: (results) => this.handleComboComplete(results),
       onClose: () => {
+        // Resume enemies when dialog actually closes (for early grades)
+        this.resumeEnemiesAfterSpellCasting()
         // Use centralized cleanup
         this.cleanupCastingDialog()
       }
@@ -705,13 +1046,27 @@ export class GameScene extends Phaser.Scene {
 
     // Check if spacebar is already being held down
     if (this.isSpaceKeyDown) {
-      console.log('🎤 Spacebar already held - starting recording immediately')
-      // Start recording immediately without delay
-      this.startRecordingForWord()
+      console.log('🎤 Spacebar already held - will start recording after initialization delay')
+      // Safari needs more time for MediaRecorder to be ready on first use
+      // 300ms seems to be the sweet spot for Safari
+      const initDelay = 300
+
+      this.time.delayedCall(initDelay, () => {
+        // Check spacebar is still held
+        if (this.isSpaceKeyDown && this.castingDialog && !this.isListeningForSpeech) {
+          console.log(`🎤 Starting recording after ${initDelay}ms initialization delay`)
+          this.startRecordingForWord()
+        } else {
+          console.log('⚠️ Spacebar released during initialization - not starting recording')
+        }
+      })
     } else {
       // Wait for spacebar to be pressed
       this.castingDialog.setRecordingState('ready')
     }
+
+    // Pause enemies for early grades during the entire spell casting session
+    this.pauseEnemiesForSpellCasting()
 
     // Dialog is fully created and shown
     console.log('✅ Dialog creation complete')
@@ -774,11 +1129,25 @@ export class GameScene extends Phaser.Scene {
   }
 
   private async stopRecordingAndProcess(): Promise<void> {
-    if (!this.streamingService || !this.castingDialog || !this.isListeningForSpeech) {
+    if (!this.streamingService || !this.castingDialog) {
+      return
+    }
+
+    // Check if we're actually listening
+    if (!this.isListeningForSpeech) {
+      console.log('⚠️ stopRecordingAndProcess called but not listening - cleaning up anyway')
+      // Clean up dialog state even if not listening
+      if (this.castingDialog) {
+        this.castingDialog.stopRecording()
+      }
       return
     }
 
     console.log('🔴 Stopping recording and processing...')
+
+    // IMPORTANT: Clear listening flag immediately to prevent stuck state
+    this.isListeningForSpeech = false
+
     this.castingDialog.stopRecording()
 
     // Stop streaming and get the accumulated audio
@@ -967,6 +1336,10 @@ export class GameScene extends Phaser.Scene {
     } else {
       // Cast spell with combo multiplier
       const comboMultiplier = Math.min(3, 1 + (results.length - 1) * 0.5)
+      const comboCount = results.length
+
+      // Show spell firing animation that scales with combo count
+      this.showSpellFiringAnimation(comboCount, comboMultiplier)
 
       // Use best result from combo for spell casting (unused for now)
       // const bestResult = results.reduce((best, current) => {
@@ -989,12 +1362,30 @@ export class GameScene extends Phaser.Scene {
       })
     }
 
-    // Use centralized cleanup
-    this.cleanupCastingDialog()
+    // Store combat state before closing dialog
+    const stillInCombat = this.isInCombat
 
-    // Timer complete - let player press spacebar when ready for next spell
-    // No automatic dialog recreation to prevent race conditions
-    console.log('✅ Spell timer complete - waiting for player to press spacebar for next spell')
+    // CRITICAL: Close the dialog UI before cleanup
+    if (this.castingDialog) {
+      console.log('🚪 Closing casting dialog UI')
+      this.castingDialog.close()  // This animates out and destroys the dialog
+      // Note: The dialog's onClose callback will call cleanupCastingDialog()
+
+      // If still in combat, schedule a new dialog after the close animation
+      if (stillInCombat) {
+        console.log('⚔️ Still in combat - creating new spell dialog after delay')
+        this.time.delayedCall(800, () => {  // Wait longer for close animation + buffer
+          if (this.isInCombat && !this.castingDialog) {
+            this.showCastingDialog()
+          }
+        })
+      } else {
+        console.log('✅ Combat ended - no new dialog needed')
+      }
+    } else {
+      // If no dialog, still do cleanup
+      this.cleanupCastingDialog()
+    }
   }
 
   // Removed old handleSpeechResult - now handled by handleDialogSpeechResult
@@ -1283,6 +1674,34 @@ export class GameScene extends Phaser.Scene {
     return new Promise(resolve => setTimeout(resolve, ms))
   }
 
+  private showNoManaMessage(message: string): void {
+    const messageText = this.add.text(
+      this.cameras.main.width / 2,
+      this.cameras.main.height / 2 - 100,
+      message,
+      {
+        fontSize: '24px',
+        color: '#4488ff',
+        stroke: '#000000',
+        strokeThickness: 3,
+        backgroundColor: '#000000aa',
+        padding: { x: 12, y: 6 }
+      }
+    );
+    messageText.setOrigin(0.5);
+    messageText.setScrollFactor(0);
+
+    // Fade out after 2 seconds
+    this.tweens.add({
+      targets: messageText,
+      alpha: 0,
+      y: messageText.y - 30,
+      duration: 2000,
+      ease: 'Power2.out',
+      onComplete: () => messageText.destroy()
+    });
+  }
+
   private showReward(amount: number, type: string): void {
     const rewardText = this.add.text(
       this.player.x,
@@ -1437,9 +1856,27 @@ export class GameScene extends Phaser.Scene {
     })
   }
 
+  private lastPlayerPosition: { x: number; y: number } = { x: -1, y: -1 }
+
   update(_time: number, _delta: number): void {
     // Don't update if game is over or paused
     if (this.isGameOver || this.isGamePaused) return
+
+    // Safety check: Clear stuck spell casting flag if no dialog exists
+    if (this.isSpellCasting && !this.castingDialog && !this.isInCombat) {
+      console.log('⚠️ Detected stuck spell casting flag - clearing it')
+      this.isSpellCasting = false
+    }
+
+    // Safety check: Clear stuck listening flag if no dialog exists
+    if (this.isListeningForSpeech && !this.castingDialog) {
+      console.log('⚠️ Detected stuck listening flag - clearing it')
+      this.isListeningForSpeech = false
+      // Also stop any orphaned streaming
+      if (this.streamingService) {
+        this.streamingService.stopStreaming()
+      }
+    }
 
     // Update enemies
     this.enemies.forEach(enemy => {
@@ -1449,19 +1886,82 @@ export class GameScene extends Phaser.Scene {
     // Update combat system with player position
     this.combatSystem.updatePlayerPosition(this.player.gridX, this.player.gridY)
 
+    // Only check combat state if player has moved
+    const playerMoved = this.player.gridX !== this.lastPlayerPosition.x ||
+                       this.player.gridY !== this.lastPlayerPosition.y
+
+    if (!playerMoved) return
+
+    this.lastPlayerPosition = { x: this.player.gridX, y: this.player.gridY }
+
     // Check for combat proximity
-    const nearbyEnemies = this.enemies.filter(enemy => {
+    const COMBAT_RANGE = 5
+    const DISENGAGE_RANGE = 10  // Larger range to prevent flickering in/out of combat
+
+    // Get all alive enemies and their distances
+    const aliveEnemies = this.enemies.filter(enemy => enemy.isAliveStatus())
+
+    const nearbyEnemies = aliveEnemies.filter(enemy => {
       const pos = enemy.getGridPosition()
       const distance = Math.abs(pos.x - this.player.gridX) + Math.abs(pos.y - this.player.gridY)
-      return distance <= 5 && enemy.isAliveStatus()
+      return distance <= COMBAT_RANGE && !enemy.isInCombatStatus()  // Only non-combat enemies
     })
 
-    if (nearbyEnemies.length > 0 && !this.isInCombat) {
-      // Register nearby enemies with combat system
+    const farCombatEnemies = aliveEnemies.filter(enemy => {
+      const pos = enemy.getGridPosition()
+      const distance = Math.abs(pos.x - this.player.gridX) + Math.abs(pos.y - this.player.gridY)
+      return distance > DISENGAGE_RANGE && enemy.isInCombatStatus()  // Only enemies currently in combat
+    })
+
+    // Start combat with ALL nearby enemies at once
+    // Only block if we have an active casting dialog (not just the flag)
+    if (nearbyEnemies.length > 0 && !this.castingDialog) {
+      console.log(`🎯 Adding ${nearbyEnemies.length} enemies to combat!`)
       nearbyEnemies.forEach(enemy => {
         this.combatSystem.addEnemy(enemy.getCombatEntity())
         enemy.startCombat(this.player.getGridPosition())
       })
+      // The combatSystem will emit 'combatStarted' event which sets isInCombat = true
     }
+
+    // Remove far enemies from combat (only those actually in combat)
+    if (this.isInCombat && farCombatEnemies.length > 0) {
+      console.log(`🏃 Removing ${farCombatEnemies.length} far enemies from combat`)
+      farCombatEnemies.forEach(enemy => {
+        // Remove from combat system
+        this.combatSystem.removeEnemy(enemy.id)
+        // Stop enemy's combat behavior
+        enemy.stopCombat()
+      })
+
+      // Check if any enemies remain in combat range
+      const remainingCombatEnemies = aliveEnemies.filter(enemy => {
+        const pos = enemy.getGridPosition()
+        const distance = Math.abs(pos.x - this.player.gridX) + Math.abs(pos.y - this.player.gridY)
+        return distance <= DISENGAGE_RANGE && enemy.isInCombatStatus()
+      })
+
+      if (remainingCombatEnemies.length === 0) {
+        console.log('🏃‍♂️ Moved away from all enemies - combat should end')
+        // The combatSystem will emit 'combatEnded' when last enemy is removed
+      }
+    }
+  }
+
+  /**
+   * Clean up input handlers and resources when scene shuts down
+   * Called automatically by Phaser when scene stops or is destroyed
+   */
+  shutdown(): void {
+    // Remove all keyboard listeners to prevent memory leaks and double-input
+    this.input.keyboard?.removeAllListeners()
+
+    // Clean up any remaining tweens
+    this.tweens.killAll()
+
+    // Clean up any remaining timers
+    this.time.removeAllEvents()
+
+    console.log('GameScene shutdown - cleaned up input handlers')
   }
 }

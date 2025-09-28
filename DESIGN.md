@@ -262,24 +262,56 @@ Advanced SAT-style mechanics will be implemented once core systems are proven an
 - Adds strategic depth for advanced players
 - Mimics real-time decision making
 
-### Mana Point (MP) Scaling System
+### Mana Point (MP) System - Core Spell Casting Resource
 
-**MP as Universal Enhancement Resource**
-- **Timer Extension**: Spend MP to add 2-3 seconds to spell timer
-- **Extra Tries**: Spend MP to gain additional attempts (1 MP = 1 extra try)
-- **Scaling Cost**: Higher grade levels cost more MP for same benefit
-- **Strategic Resource**: Creates meaningful choice between spell power and accessibility
+**MP Controls Spell Attempts (Not Damage)**
+- MP is consumed to START casting a spell, not for damage
+- Early grades: MP determines number of tries available
+- Advanced grades: MP determines timer duration (while recording)
+- Creates consistent resource management across all levels
 
-**MP Cost Examples**:
-- K-2nd Grade: 1 MP = +1 extra try
-- 3rd-5th Grade: 2 MP = +3 seconds timer OR +1 try
-- 6th+ Grade: 3 MP = +2 seconds timer OR +1 try
+**Grade-Based MP Consumption**:
+
+**K-2nd Grade (Tries Mode)**:
+- Base: 10 MP = 3 tries
+- Formula: Tries = floor(MP / 10) * 3
+- Examples:
+  - 50 MP = 15 tries total
+  - 30 MP = 9 tries total
+  - 10 MP = 3 tries (minimum for one spell)
+- Cannot cast if MP < 10
+
+**3rd-4th Grade (Hybrid Mode)**:
+- Base: 10 MP = 5 seconds timer (recording time only)
+- Formula: Timer = (MP / 10) * 5 seconds
+- Examples:
+  - 50 MP = 25 seconds total recording time
+  - 30 MP = 15 seconds total recording time
+  - 10 MP = 5 seconds (minimum)
+- Cannot cast if MP < 10
+
+**5th+ Grade (Timer Mode)**:
+- Base: 15 MP = 5 seconds timer (recording time only)
+- Formula: Timer = (MP / 15) * 5 seconds
+- Examples:
+  - 45 MP = 15 seconds total recording time
+  - 30 MP = 10 seconds total recording time
+  - 15 MP = 5 seconds (minimum)
+- Cannot cast if MP < 15
+
+**Strategic Decisions**:
+- Players must balance number of spell attempts vs saving MP
+- Word complexity affects damage, not MP cost
+- Failed attempts still consume MP (risk/reward)
+- MP regenerates after combat (+25% of max)
+- Treasure rooms may contain MP potions
 
 **Design Benefits**:
-- Allows players to adapt difficulty to their current ability
-- Provides progression path for players who struggle with speed
-- Creates strategic depth in resource management
-- Maintains challenge while offering accessibility options
+- Single resource system across all grades
+- Natural difficulty scaling with grade progression
+- Prevents spell spamming while allowing practice
+- Creates meaningful resource management decisions
+- Accessibility without removing challenge
 
 ## Audio Design (To Be Implemented)
 
@@ -327,6 +359,36 @@ Advanced SAT-style mechanics will be implemented once core systems are proven an
 - **Audio Cues**: Non-visual feedback for all important events
 - **Volume Sliders**: Separate controls for music, SFX, voice
 - **Audio Descriptions**: Optional descriptive audio for visual elements
+
+## Technical Architecture Decisions
+
+### Input Handling (CRITICAL)
+**Decision: Use Phaser's input system exclusively**
+
+**Rationale:**
+- Prevents double-input bugs from mixing input methods
+- Ensures consistent event handling across all browsers
+- Integrates properly with game loop and scene lifecycle
+- Provides unified handling for keyboard, mouse, and touch
+
+**Implementation Rules:**
+1. **ALWAYS** use `this.input.keyboard.on()` for keyboard events
+2. **NEVER** use `addEventListener`, `document.onkeydown`, or DOM event listeners
+3. **NEVER** create HTML input elements for game input (only for debug tools)
+4. Register input handlers in scene's `create()` method
+5. Clean up listeners in scene's `shutdown()` or state transitions
+6. Use key-specific events (e.g., 'keydown-SPACE') for clarity
+
+**Anti-patterns to avoid:**
+```javascript
+// ❌ NEVER DO THIS
+document.addEventListener('keydown', handler)
+window.onkeydown = handler
+inputElement.addEventListener('keydown', handler)
+
+// ✅ ALWAYS DO THIS
+this.input.keyboard.on('keydown-SPACE', handler)
+```
 
 ## Implementation Status
 

@@ -43,6 +43,16 @@ npm run typecheck
 
 ## Key Implementation Details
 
+### Input Handling Architecture
+**CRITICAL: Always use Phaser's input system exclusively. Never mix input methods.**
+- Use ONLY `this.input.keyboard.on()` for keyboard events
+- NEVER use `addEventListener`, `document.onkeydown`, or DOM event listeners
+- NEVER create HTML input elements for game input (only for debug/development tools)
+- All input must go through Phaser's event system to prevent double-input bugs
+- Use Phaser's key-specific events (e.g., 'keydown-SPACE') for consistent handling
+- Input events should be registered in scene's `create()` method
+- Clean up input listeners in scene's `shutdown()` or when switching states
+
 ### Grid System
 - 32x32 pixel tiles
 - 1024x768 game resolution

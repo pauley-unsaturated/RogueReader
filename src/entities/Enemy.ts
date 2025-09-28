@@ -7,6 +7,7 @@ export interface EnemyConfig {
   type: 'goblin' | 'skeleton' | 'bat' | 'slime' | 'orc' | 'demon';
   level: number;
   gridPosition: { x: number; y: number };
+  currentFloor?: number; // For beginner-friendly scaling
   health?: number;
   damage?: number;
   defense?: number;
@@ -52,12 +53,42 @@ export class Enemy extends Phaser.GameObjects.Container {
     const baseStats = this.getBaseStats();
     const levelMultiplier = 1 + (this.config.level - 1) * 0.2;
 
+    // Apply beginner-friendly reduction for early floors (K-4th grade)
+    const floorBasedReduction = this.getBeginnerFriendlyReduction();
+
     return {
-      health: Math.floor((this.config.health || baseStats.health) * levelMultiplier),
-      maxHealth: Math.floor((this.config.health || baseStats.health) * levelMultiplier),
-      damage: Math.floor((this.config.damage || baseStats.damage) * levelMultiplier),
-      defense: Math.floor((this.config.defense || baseStats.defense) * levelMultiplier)
+      health: Math.floor((this.config.health || baseStats.health) * levelMultiplier * floorBasedReduction.health),
+      maxHealth: Math.floor((this.config.health || baseStats.health) * levelMultiplier * floorBasedReduction.health),
+      damage: Math.floor((this.config.damage || baseStats.damage) * levelMultiplier * floorBasedReduction.damage),
+      defense: Math.floor((this.config.defense || baseStats.defense) * levelMultiplier * floorBasedReduction.defense)
     };
+  }
+
+  private getBeginnerFriendlyReduction(): { health: number; damage: number; defense: number } {
+    const currentFloor = this.config.currentFloor || this.config.level;
+
+    if (currentFloor <= 2) {
+      // K-2nd grade: Significantly weaker enemies
+      return {
+        health: 0.6,  // 40% less health
+        damage: 0.5,  // 50% less damage
+        defense: 0.7  // 30% less defense
+      };
+    } else if (currentFloor <= 4) {
+      // 3rd-4th grade: Moderately weaker enemies
+      return {
+        health: 0.8,  // 20% less health
+        damage: 0.7,  // 30% less damage
+        defense: 0.8  // 20% less defense
+      };
+    } else {
+      // 5th+ grade: Normal enemy stats
+      return {
+        health: 1.0,
+        damage: 1.0,
+        defense: 1.0
+      };
+    }
   }
 
   private getBaseStats(): CombatEntity['stats'] {
@@ -418,6 +449,10 @@ export class Enemy extends Phaser.GameObjects.Container {
     };
   }
 
+  public get id(): string {
+    return this.config.id;
+  }
+
   public getGridPosition(): { x: number; y: number } {
     return { ...this.gridPosition };
   }
@@ -426,19 +461,17 @@ export class Enemy extends Phaser.GameObjects.Container {
     return this.isAlive;
   }
 
-  public update(playerPosition: { x: number; y: number }): void {
+  public isInCombatStatus(): boolean {
+    return this.isInCombat;
+  }
+
+  public update(_playerPosition: { x: number; y: number }): void {
     if (!this.isAlive) return;
 
-    // Check aggro range
-    const distance = Math.abs(this.gridPosition.x - playerPosition.x) +
-                    Math.abs(this.gridPosition.y - playerPosition.y);
-
-    const aggroRange = this.config.aggroRange || 5;
-
-    if (distance <= aggroRange && !this.isInCombat) {
-      this.startCombat(playerPosition);
-    } else if (distance > aggroRange * 2 && this.isInCombat) {
-      this.stopCombat();
-    }
+    // Combat management is now handled centrally in GameScene.update()
+    // This prevents conflicts between individual enemy and scene-level combat management
+    // GameScene handles:
+    // - Starting combat when enemies are within COMBAT_RANGE (5 tiles)
+    // - Ending combat when enemies are beyond DISENGAGE_RANGE (10 tiles)
   }
 }

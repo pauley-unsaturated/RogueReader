@@ -3,7 +3,9 @@ import { SpeechRecognitionResult } from '../services/SpeechRecognitionService';
 
 export interface CastingDialogOptions {
   spellName: string;
-  duration: number;
+  duration?: number; // Optional - only used for timer mode
+  maxTries?: number; // Optional - only used for tries mode
+  useTriesMode?: boolean; // If true, use tries instead of timer
   onTimerEnd: (results: SpeechRecognitionResult[]) => void;
   onClose?: () => void;
 }
@@ -20,6 +22,8 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   private instructionText!: Phaser.GameObjects.Text;
   private stateText!: Phaser.GameObjects.Text;
   private recordingBar!: Phaser.GameObjects.Graphics;
+  private castButton!: Phaser.GameObjects.Container;
+  private castButtonText!: Phaser.GameObjects.Text;
 
   private options: CastingDialogOptions;
   private comboWords: string[] = [];
@@ -28,6 +32,8 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   private currentWord: string = '';
   private isRecording: boolean = false;
   private recordingStartTime: number = 0;
+  private currentTries: number = 0;
+  private triesDisplay?: Phaser.GameObjects.Text;
 
   constructor(scene: Phaser.Scene, options: CastingDialogOptions) {
     super(scene, scene.cameras.main.width / 2, scene.cameras.main.height / 2);
@@ -131,10 +137,26 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     this.instructionText.setAlpha(0.8);
     this.add(this.instructionText);
 
-    // Timer bar at bottom
+    // Timer bar at bottom (only for timer mode)
     this.timerBar = this.scene.add.graphics();
     this.timerBar.y = 180;
     this.add(this.timerBar);
+
+    // Tries display (only for tries mode)
+    if (this.options.useTriesMode) {
+      this.triesDisplay = this.scene.add.text(0, 180, '', {
+        fontSize: '24px',
+        color: '#ffffff',
+        fontFamily: 'Arial',
+        stroke: '#000000',
+        strokeThickness: 2
+      });
+      this.triesDisplay.setOrigin(0.5);
+      this.add(this.triesDisplay);
+    }
+
+    // Cast Spell button
+    this.createCastButton();
 
     // Animate in
     this.setScale(0);
@@ -157,17 +179,122 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     this.comboResults = [];
     this.isRecording = false;
 
-    // Start timer
-    this.startTimer();
+    if (this.options.useTriesMode) {
+      // Initialize tries mode
+      this.currentTries = 0;
+      this.updateTriesDisplay();
+      // Hide timer bar in tries mode
+      this.timerBar.clear();
+    } else {
+      // Start timer for timer mode
+      this.startTimer();
+    }
 
     // Show ready state
     this.setRecordingState('ready');
 
     // Update instruction
-    this.instructionText.setText('Hold SPACE to record');
+    this.instructionText.setText('Hold SPACE to record • ENTER to cast spell');
+  }
+
+  private createCastButton(): void {
+    // Create button container
+    this.castButton = this.scene.add.container(200, 180);
+
+    // Button background
+    const buttonBg = this.scene.add.graphics();
+    buttonBg.fillStyle(0x4CAF50, 0.8); // Green color
+    buttonBg.fillRoundedRect(-60, -20, 120, 40, 5);
+    buttonBg.lineStyle(2, 0x45a049);
+    buttonBg.strokeRoundedRect(-60, -20, 120, 40, 5);
+    this.castButton.add(buttonBg);
+
+    // Button text
+    this.castButtonText = this.scene.add.text(0, 0, '⚡ Cast (Enter)', {
+      fontSize: '16px',
+      color: '#ffffff',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    });
+    this.castButtonText.setOrigin(0.5);
+    this.castButton.add(this.castButtonText);
+
+    // Make button interactive
+    buttonBg.setInteractive(new Phaser.Geom.Rectangle(-60, -20, 120, 40), Phaser.Geom.Rectangle.Contains);
+
+    // Add hover effect
+    buttonBg.on('pointerover', () => {
+      buttonBg.clear();
+      buttonBg.fillStyle(0x45a049, 0.9); // Darker green on hover
+      buttonBg.fillRoundedRect(-60, -20, 120, 40, 5);
+      buttonBg.lineStyle(2, 0x3d8b40);
+      buttonBg.strokeRoundedRect(-60, -20, 120, 40, 5);
+      this.scene.input.setDefaultCursor('pointer');
+    });
+
+    buttonBg.on('pointerout', () => {
+      buttonBg.clear();
+      buttonBg.fillStyle(0x4CAF50, 0.8);
+      buttonBg.fillRoundedRect(-60, -20, 120, 40, 5);
+      buttonBg.lineStyle(2, 0x45a049);
+      buttonBg.strokeRoundedRect(-60, -20, 120, 40, 5);
+      this.scene.input.setDefaultCursor('default');
+    });
+
+    // Add click handler
+    buttonBg.on('pointerdown', () => {
+      // Trigger spell casting if we have combo words
+      if (this.comboResults.length > 0) {
+        this.options.onTimerEnd(this.comboResults);
+        this.close();
+      }
+    });
+
+    // Initially hide if no combo
+    this.updateCastButtonVisibility();
+
+    this.add(this.castButton);
+  }
+
+  private updateCastButtonVisibility(): void {
+    if (this.castButton) {
+      // Show button only when we have at least one word in combo
+      const hasCombo = this.comboWords.length > 0;
+      this.castButton.setAlpha(hasCombo ? 1 : 0.3);
+
+      if (this.castButtonText) {
+        const comboText = hasCombo ?
+          `⚡ Cast x${this.comboWords.length}` :
+          '⚡ Cast (Enter)';
+        this.castButtonText.setText(comboText);
+      }
+    }
+  }
+
+  private updateTriesDisplay(): void {
+    if (this.triesDisplay && this.options.useTriesMode) {
+      const maxTries = this.options.maxTries || 3;
+      const remaining = maxTries - this.currentTries;
+
+      // Show potion bottles for tries remaining (since we're using MP)
+      let display = '';
+      for (let i = 0; i < remaining; i++) {
+        display += '🧪 '; // Full potion
+      }
+      for (let i = 0; i < this.currentTries; i++) {
+        display += '💨 '; // Empty/used potion
+      }
+
+      this.triesDisplay.setText(display.trim());
+    }
   }
 
   private startTimer(): void {
+    // Skip timer creation in tries mode
+    if (this.options.useTriesMode) {
+      return;
+    }
+
     const barWidth = 400;
     const barHeight = 12;
 
@@ -229,6 +356,9 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   }
 
   private pauseTimer(): void {
+    // Skip in tries mode
+    if (this.options.useTriesMode) return;
+
     if (this.timerTween && !this.timerTween.isPaused()) {
       this.timerTween.pause();
       console.log('⏸️ Timer paused');
@@ -239,6 +369,9 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   }
 
   private resumeTimer(): void {
+    // Skip in tries mode
+    if (this.options.useTriesMode) return;
+
     if (this.timerTween && this.timerTween.isPaused()) {
       this.timerTween.resume();
       console.log('▶️ Timer resumed');
@@ -261,7 +394,7 @@ export class CastingDialog extends Phaser.GameObjects.Container {
         this.pauseTimer(); // Pause while waiting for user input
         this.stateText.setText('🎤 READY');
         this.stateText.setColor('#00ff00');
-        this.instructionText.setText('Hold SPACE to record');
+        this.instructionText.setText('Hold SPACE to record • ENTER to cast');
         this.showMicReady();
         break;
       case 'recording':
@@ -284,13 +417,14 @@ export class CastingDialog extends Phaser.GameObjects.Container {
         this.pauseTimer(); // Pause after successful recognition
         this.stateText.setText('✓ RECOGNIZED!');
         this.stateText.setColor('#00ff00');
-        this.instructionText.setText('Great! Keep going!');
+        this.instructionText.setText('Great! Keep going! • ENTER to cast');
         break;
       case 'error':
         this.pauseTimer(); // Pause while showing error
         this.stateText.setText('❌ TRY AGAIN');
         this.stateText.setColor('#ff0000');
-        this.instructionText.setText('Hold SPACE to try again');
+        this.instructionText.setText('Recovering... (1.5s)');
+        this.showErrorRecoveryAnimation();
         break;
     }
   }
@@ -354,6 +488,33 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     }
   }
 
+  private showErrorRecoveryAnimation(): void {
+    if (!this.recordingBar || !this.recordingBar.active) return;
+
+    // Show a red recovery bar that fills up over 1.5 seconds
+    this.scene.tweens.add({
+      targets: { width: 0 },
+      width: 200,
+      duration: 1500,
+      ease: 'Linear',
+      onUpdate: (tween) => {
+        if (!this.recordingBar || !this.recordingBar.active) return;
+        const width = tween.getValue() || 0;
+        this.recordingBar.clear();
+        this.recordingBar.fillStyle(0xff0000, 0.5); // Semi-transparent red
+        this.recordingBar.fillRect(-width / 2, 0, width, 4);
+      },
+      onComplete: () => {
+        if (!this.recordingBar || !this.recordingBar.active) return;
+        this.recordingBar.clear();
+        // Update instruction text when recovery is complete
+        if (this.instructionText && this.instructionText.active) {
+          this.instructionText.setText('Hold SPACE to try again • ENTER to cast');
+        }
+      }
+    });
+  }
+
   public handleWordSuccess(word: string, result: SpeechRecognitionResult): void {
     if (!this.isActive) return;
 
@@ -366,6 +527,9 @@ export class CastingDialog extends Phaser.GameObjects.Container {
 
     // Update combo display
     this.updateComboDisplay();
+
+    // Update cast button to show combo count
+    this.updateCastButtonVisibility();
 
     // Get next word
     const nextWord = this.getNextWord();
@@ -385,9 +549,9 @@ export class CastingDialog extends Phaser.GameObjects.Container {
 
       // Update instruction
       if (this.comboWords.length === 1) {
-        this.instructionText.setText('Great! Hold SPACE for next word');
+        this.instructionText.setText('Great! SPACE for next • ENTER to cast');
       } else {
-        this.instructionText.setText(`Combo x${this.comboWords.length}! Hold SPACE to continue`);
+        this.instructionText.setText(`Combo x${this.comboWords.length}! SPACE to continue • ENTER to cast`);
       }
     }
   }
@@ -489,8 +653,8 @@ export class CastingDialog extends Phaser.GameObjects.Container {
       this.currentWordText.setText('');
     }
 
-    // Brief pause then fire callback
-    this.scene.time.delayedCall(1000, () => {
+    // Quick transition to next spell (reduced from 1000ms for better game flow)
+    this.scene.time.delayedCall(300, () => {
       this.options.onTimerEnd(this.comboResults);
       this.close();
     });
@@ -558,7 +722,36 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     return this.isRecording;
   }
 
+  public getActive(): boolean {
+    return this.isActive;
+  }
+
+  public getComboResults(): SpeechRecognitionResult[] {
+    return [...this.comboResults]; // Return a copy to prevent external modification
+  }
+
   public handleWordError(): void {
+    if (this.options.useTriesMode) {
+      // Increment tries counter
+      this.currentTries++;
+      this.updateTriesDisplay();
+
+      // Check if we've exceeded max tries
+      const maxTries = this.options.maxTries || 3;
+      if (this.currentTries >= maxTries) {
+        // Out of tries - end the spell casting
+        this.isActive = false;
+        this.instructionText.setText('Out of tries! Spell fizzled...');
+
+        // End after brief pause
+        this.scene.time.delayedCall(1000, () => {
+          this.options.onTimerEnd(this.comboResults);
+          this.close();
+        });
+        return;
+      }
+    }
+
     this.setRecordingState('error');
 
     // Brief pause then ready to try again

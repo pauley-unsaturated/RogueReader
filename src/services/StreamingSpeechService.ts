@@ -65,6 +65,8 @@ export class StreamingSpeechService {
         if (event.data.size > 0) {
           this.audioChunks.push(event.data)
           this.accumulatedAudio.push(event.data) // Keep full recording
+        } else if (this.audioChunks.length === 0 && this.mediaRecorder?.state === 'recording') {
+          console.warn('⚠️ Received empty chunk with no previous data - mic may not be ready')
         }
       }
 
@@ -84,8 +86,14 @@ export class StreamingSpeechService {
       // Start recording with reasonable timeslice
       // Safari needs larger timeslices
       const timeslice = isSafari ? 500 : 250
-      this.mediaRecorder.start(timeslice)
-      console.log(`🎤 Recording with ${timeslice}ms timeslice`)
+
+      // Start recording immediately
+      if (this.mediaRecorder.state === 'inactive') {
+        this.mediaRecorder.start(timeslice)
+        console.log(`🎤 Recording started with ${timeslice}ms timeslice`)
+      } else {
+        console.warn(`⚠️ MediaRecorder not ready: state=${this.mediaRecorder.state}`)
+      }
 
       // Don't process chunks automatically - wait for stop
 
