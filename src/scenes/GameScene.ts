@@ -7,11 +7,15 @@ import { CombatSystem } from '@/systems/CombatSystem'
 import { CombatUI } from '@/components/CombatUI'
 import { CastingDialog } from '@/components/CastingDialog'
 import { Enemy, EnemyConfig } from '@/entities/Enemy'
+import { Stairwell, StairwellConfig } from '@/entities/Stairwell'
 import { WordManager } from '@/systems/WordManager'
 import { SpeechRecognitionResult } from '@/services/SpeechRecognitionService'
 import { PronunciationHelpService } from '@/services/PronunciationHelpService'
 import { StreamingSpeechService } from '@/services/StreamingSpeechService'
 import { SpellCostSystem } from '@/systems/SpellCostSystem'
+import { CurrencySystem } from '@/systems/CurrencySystem'
+import { InventorySystem } from '@/systems/InventorySystem'
+import { HotBarUI } from '@/components/HotBarUI'
 
 export class GameScene extends Phaser.Scene {
   private player!: Player
@@ -24,7 +28,11 @@ export class GameScene extends Phaser.Scene {
   private combatUI!: CombatUI
   private castingDialog: CastingDialog | null = null
   private enemies: Enemy[] = []
+  private stairwell: Stairwell | null = null
   private wordManager!: WordManager
+  private currencySystem!: CurrencySystem
+  private inventorySystem!: InventorySystem
+  private hotBarUI!: HotBarUI
   private currentWord: string | null = null
   private comboWords: string[] = []
   private pendingComboResults: SpeechRecognitionResult[] = []
@@ -65,6 +73,12 @@ export class GameScene extends Phaser.Scene {
     // Initialize systems
     this.wordManager = new WordManager()
     this.combatSystem = new CombatSystem()
+    this.currencySystem = new CurrencySystem()
+    this.inventorySystem = new InventorySystem()
+
+    // Load saved data
+    this.currencySystem.load()
+    this.inventorySystem.load()
 
     // Initialize speech services
     try {
@@ -97,6 +111,14 @@ export class GameScene extends Phaser.Scene {
     this.combatUI.setScrollFactor(0)
     this.combatUI.setDepth(100)
 
+    // Create hot bar UI
+    this.hotBarUI = new HotBarUI(this)
+    this.hotBarUI.setScrollFactor(0)
+    this.hotBarUI.setDepth(150)
+
+    // Initialize hot bar with current inventory
+    this.updateHotBarUI()
+
     // Spawn enemies in combat rooms
     this.spawnEnemies()
 
@@ -116,7 +138,13 @@ export class GameScene extends Phaser.Scene {
     // Clear existing tiles
     this.tiles.forEach(row => row.forEach(tile => tile.destroy()))
     this.tiles = []
-    
+
+    // Clear existing stairwell
+    if (this.stairwell) {
+      this.stairwell.destroy()
+      this.stairwell = null
+    }
+
     this.dungeon = this.dungeonGenerator.generate(this.currentFloor)
     
     // Create visual tiles
@@ -398,6 +426,7 @@ export class GameScene extends Phaser.Scene {
       }
     })
 
+
     this.input.keyboard!.on('keydown-SHIFT', () => {
       // Don't process SHIFT if game is over
       if (this.isGameOver) return
@@ -421,6 +450,23 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-N', () => {
       console.log('N pressed!')
       this.nextFloor()
+    })
+
+    // Hot bar consumable usage (1-4 keys)
+    this.input.keyboard!.on('keydown-ONE', () => {
+      this.useHotBarItem(0)
+    })
+
+    this.input.keyboard!.on('keydown-TWO', () => {
+      this.useHotBarItem(1)
+    })
+
+    this.input.keyboard!.on('keydown-THREE', () => {
+      this.useHotBarItem(2)
+    })
+
+    this.input.keyboard!.on('keydown-FOUR', () => {
+      this.useHotBarItem(3)
     })
 
     console.log('Input handlers set up complete.')
@@ -456,16 +502,132 @@ export class GameScene extends Phaser.Scene {
     return tileType === 0 || tileType === 2 // Floor or door
   }
 
+  private useHotBarItem(slotIndex: number): void {
+    // Don't use items during combat or if game is over
+    if (this.isInCombat || this.isGameOver) {
+      console.log(`❌ Cannot use items during combat or when game is over`)
+      return
+    }
+
+    console.log(`🎯 Attempting to use hot bar slot ${slotIndex + 1}`)
+
+    const success = this.inventorySystem.useHotBarSlot(slotIndex)
+
+    if (success) {
+      // Get the healing amount and apply it
+      const hotBarData = this.inventorySystem.getHotBar()
+      const usedItem = hotBarData[slotIndex]
+
+      if (usedItem.template) {
+        const healAmount = usedItem.template.healAmount
+
+        // Apply healing to player
+        this.player.heal(healAmount)
+
+        // Update hot bar UI
+        this.updateHotBarUI()
+
+        // Show visual feedback
+        this.hotBarUI.highlightSlot(slotIndex)
+        this.hotBarUI.showUsageText(slotIndex, `+${healAmount} HP`)
+
+        console.log(`✅ Used ${usedItem.template.name}, healed ${healAmount} HP`)
+      }
+    }
+  }
+
+  private updateHotBarUI(): void {
+    const hotBarData = this.inventorySystem.getHotBar()
+    this.hotBarUI.updateHotBar(hotBarData)
+  }
+
+  private showCurrencyReward(amount: number): void {
+    // Show floating gold word text
+    const rewardText = this.add.text(
+      this.player.x + Phaser.Math.Between(-20, 20),
+      this.player.y - 30,
+      `+${amount} Gold Words`,
+      {
+        fontSize: '16px',
+        color: '#ffff00',
+        stroke: '#000000',
+        strokeThickness: 2
+      }
+    )
+    rewardText.setOrigin(0.5)
+    rewardText.setDepth(200)
+
+    this.tweens.add({
+      targets: rewardText,
+      y: rewardText.y - 40,
+      alpha: 0,
+      duration: 1500,
+      ease: 'Power2.out',
+      onComplete: () => rewardText.destroy()
+    })
+  }
+
+  private checkConsumableDrop(enemyType: string): void {
+    // Boss enemies always drop consumables
+    if (enemyType === 'demon') {
+      const rareConsumable = this.inventorySystem.getConsumableSystem().generateRandomConsumable(this.currentFloor)
+      if (rareConsumable) {
+        this.inventorySystem.addConsumable(rareConsumable, 1)
+        console.log(`👑 Boss dropped rare consumable: ${rareConsumable}`)
+      }
+      return
+    }
+
+    // Regular enemies have 15-20% chance
+    const dropChance = 0.15 + (this.currentFloor * 0.01) // Increases with floor
+    if (Math.random() < dropChance) {
+      const consumable = this.inventorySystem.getConsumableSystem().generateRandomConsumable(this.currentFloor)
+      if (consumable) {
+        this.inventorySystem.addConsumable(consumable, 1)
+        console.log(`🎁 Enemy dropped consumable: ${consumable}`)
+      }
+    }
+  }
+
+  private checkRuneDrop(enemyType: string): void {
+    let dropChance = 0.1 // 10% base chance
+
+    // Bosses have much higher rune drop chance
+    if (enemyType === 'demon') {
+      dropChance = 1.0 // 100% chance for bosses
+    }
+
+    // Increase chance with floor level
+    dropChance += this.currentFloor * 0.02
+
+    if (Math.random() < dropChance) {
+      const runeId = this.inventorySystem.getRuneSystem().generateRandomRune()
+      this.inventorySystem.addRune(runeId)
+      console.log(`✨ Enemy dropped rune: ${runeId}`)
+    }
+  }
+
   private interact(): void {
     const playerX = this.player.gridX
     const playerY = this.player.gridY
-    
-    // Check if player is in a room
+
+    // First check for stairwell interaction
+    if (this.stairwell && this.stairwell.isActiveStatus()) {
+      const playerPos = { x: playerX, y: playerY }
+      if (this.stairwell.canInteract(playerPos)) {
+        console.log('🚪 Player interacting with stairwell via spacebar!')
+        this.stairwell.interact()
+        this.advanceToNextFloor()
+        return // Exit early, no other interactions needed
+      }
+    }
+
+    // Check if player is in a room (other interactions)
     const currentRoom = this.dungeon.rooms.find(room =>
       playerX >= room.x && playerX < room.x + room.width &&
       playerY >= room.y && playerY < room.y + room.height
     )
-    
+
     if (currentRoom) {
       this.scene.get('UIScene').events.emit('room-entered', currentRoom)
     }
@@ -586,6 +748,125 @@ export class GameScene extends Phaser.Scene {
     // Listen for enemy deaths
     this.events.on('enemyDied', (data: any) => {
       this.combatSystem.removeEnemy(data.id)
+
+      // Find the enemy to get its details for rewards
+      const enemy = this.enemies.find(e => e.id === data.id)
+      if (enemy) {
+        const config = (enemy as any).config // Access enemy config
+
+        // Generate currency reward
+        const goldReward = CurrencySystem.generateEnemyReward(
+          config.level,
+          config.type,
+          this.currentFloor
+        )
+
+        this.currencySystem.addGoldWords(goldReward, `${config.type} defeat`)
+        this.showCurrencyReward(goldReward)
+
+        // Chance for consumable drops
+        this.checkConsumableDrop(config.type)
+
+        // Chance for rune drops (higher chance for bosses)
+        this.checkRuneDrop(config.type)
+      }
+
+      // Check if this was a boss death
+      if (data.id.startsWith('boss_')) {
+        console.log('👑 Boss defeated! Spawning stairwell...')
+        this.spawnStairwell()
+      }
+
+      // Update hot bar UI in case items were added
+      this.updateHotBarUI()
+    })
+  }
+
+  private spawnStairwell(): void {
+    // Don't spawn if stairwell already exists
+    if (this.stairwell) {
+      console.warn('Stairwell already exists!')
+      return
+    }
+
+    // Get stairwell position from dungeon
+    if (!this.dungeon.stairwellPosition) {
+      console.error('No stairwell position found in dungeon!')
+      return
+    }
+
+    const config: StairwellConfig = {
+      gridPosition: this.dungeon.stairwellPosition,
+      targetFloor: this.currentFloor + 1
+    }
+
+    this.stairwell = new Stairwell(this, config)
+
+    // Trigger the materialization animation
+    this.stairwell.materialize()
+  }
+
+
+  private advanceToNextFloor(): void {
+    console.log(`🏗️ Advancing from floor ${this.currentFloor} to ${this.currentFloor + 1}`)
+
+    // Increment floor
+    this.currentFloor++
+
+    // End combat if any
+    this.isInCombat = false
+    this.combatSystem.clearAll()
+
+    // Regenerate dungeon for new floor
+    this.generateDungeon()
+    this.spawnEnemies()
+
+    // Move player to new start position
+    this.player.setGridPosition(this.dungeon.playerStart.x, this.dungeon.playerStart.y)
+
+    // Update UI or show floor transition message
+    console.log(`✨ Welcome to floor ${this.currentFloor}!`)
+
+    // Optionally show a brief "Floor X" message
+    this.showFloorTransition()
+  }
+
+  private showFloorTransition(): void {
+    // Create a temporary text display for floor transition
+    const floorText = this.add.text(
+      this.cameras.main.centerX,
+      this.cameras.main.centerY,
+      `Floor ${this.currentFloor}`,
+      {
+        fontSize: '48px',
+        color: '#ffff00',
+        stroke: '#000000',
+        strokeThickness: 4,
+        align: 'center'
+      }
+    )
+    floorText.setOrigin(0.5)
+    floorText.setDepth(1000) // High depth to appear over everything
+
+    // Animate the text
+    this.tweens.add({
+      targets: floorText,
+      scaleX: { from: 0, to: 1 },
+      scaleY: { from: 0, to: 1 },
+      alpha: { from: 0, to: 1 },
+      duration: 500,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        // Hold for a moment, then fade out
+        this.time.delayedCall(1500, () => {
+          this.tweens.add({
+            targets: floorText,
+            alpha: 0,
+            duration: 500,
+            onComplete: () => floorText.destroy()
+          })
+        })
+      }
     })
   }
 
@@ -1974,6 +2255,14 @@ export class GameScene extends Phaser.Scene {
     if (this.streamingService) {
       this.streamingService.cleanupPreWarmedRecorder()
       console.log('🧹 Cleaned up pre-warmed MediaRecorder')
+    }
+
+    // Save progression systems
+    if (this.currencySystem) {
+      this.currencySystem.save()
+    }
+    if (this.inventorySystem) {
+      this.inventorySystem.save()
     }
 
     console.log('GameScene shutdown - cleaned up input handlers and media resources')

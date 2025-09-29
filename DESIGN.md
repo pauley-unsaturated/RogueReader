@@ -126,7 +126,37 @@ Every mechanic reinforces reading practice while maintaining compelling roguelik
 
 ## Dungeon Progression Mechanics
 
-### Option 1: The Ascending Library
+### Selected System: Boss-Gated Stairwell Progression
+
+**Core Mechanics:**
+- **Boss Guarantee**: Every dungeon level ALWAYS has at least one boss enemy
+- **Boss Placement**: Probability decay from farthest to nearest rooms
+- **Stairwell Activation**: Stairwells only appear after defeating the floor's boss
+- **Visual Feedback**: Stairwell materializes with shimmery appearing animation upon boss death
+- **Progression Lock**: Cannot advance to next floor without defeating current floor's boss
+
+**Implementation Details:**
+- **Distance Calculation**: Use pathfinding or Manhattan distance to rank rooms by distance
+- **Boss Room Selection Algorithm**:
+  - Sort rooms by distance from player spawn (farthest to nearest)
+  - 90% chance for farthest room
+  - If not placed, 90% chance for next farthest room
+  - Continue with 90% probability decay (90% → 81% → 72.9% → ...)
+  - **Hard constraint**: Never place in player's spawn room (closest room)
+  - If reached second-closest room without placement, force placement there
+- **Multiple Bosses**: Higher floors may have multiple bosses requiring all defeats
+- **Stairwell Location**: Appears in boss room or designated "exit room" after victory
+- **Animation**: Particle effects, glow, and fade-in for stairwell materialization
+
+**Educational Benefits:**
+- Forces engagement with combat reading mechanics
+- Creates clear goals and progression milestones
+- Provides sense of accomplishment after difficult battles
+- Encourages exploration to find boss location
+
+### Alternative Options Considered:
+
+#### Option 1: The Ascending Library
 - **Boss as Gatekeeper**: Each floor's boss guards a "Tome of Passage"
 - **Tome Challenge**: Read the tome's passage (grade-appropriate text) to unlock stairs
 - **Partial Progress**: Can attempt tome multiple times, progress saves
@@ -134,14 +164,14 @@ Every mechanic reinforces reading practice while maintaining compelling roguelik
 - **Backtracking Bonus**: Return to cleared floors to practice words for bonus XP
 - **Special Mechanic**: "Word Elevator" - Skip floors by reading increasingly difficult word chains
 
-### Option 2: Portal Inscription System
+#### Option 2: Portal Inscription System
 - **Boss Keys**: Bosses drop key fragments with words on them
 - **Portal Assembly**: Combine key fragments by reading all their words in sequence
 - **Portal Stability**: Portal degrades if you take too long - maintain by reading "stability" words
 - **Multiple Portals**: Choose between easy/hard portals based on word difficulty
 - **Portal Network**: Unlock fast travel by memorizing portal word addresses
 
-### Option 3: The Growing Spellbook
+#### Option 3: The Growing Spellbook
 - **Page Collection**: Bosses drop spellbook pages
 - **Chapter Completion**: Each floor is a chapter, must collect all pages to proceed
 - **Page Order**: Pages must be read in correct order to activate stairs
@@ -159,15 +189,17 @@ Based on gameplay goals and educational value:
    - Damage scales with word difficulty
    - Defensive counter-spell mechanics
 
-2. **Treasure**: Word Currency Economy with Merchant Haggling
-   - Gold words as currency based on difficulty
-   - Merchant encounters require reading item names
-   - Haggling through persuasion words
+2. **Currency**: Gold Words Economy with Shop Integration
+   - Gold words as primary currency, value based on reading complexity
+   - Earned from enemy defeats, scaled by floor and enemy type
+   - Shop rooms on every level for guaranteed consumable access
+   - Strategic spending decisions between healing and equipment
 
-3. **Power-Ups**: Hybrid of Runic Augmentation + Companion Spirits
-   - Equipment slots for prefix/suffix/core runes
-   - Companion spirits that bond through vocabulary domains
-   - Both systems provide progression variety
+3. **Power-Ups**: Runic Augmentation System (Phase 1)
+   - Equipment slots for prefix/suffix/core runes (1 each)
+   - Runes stack/level up (Flame I → Flame II → Flame III)
+   - Text-to-speech reads rune names for beginning readers
+   - Companion spirits deferred to later levels
 
 4. **Early Bosses**: Linguistic Duel System (for Cole's level)
    - Phase-based battles testing different skills
@@ -181,10 +213,12 @@ Based on gameplay goals and educational value:
    - Synonym/antonym challenges
    - Word root/prefix/suffix manipulation
 
-6. **Progression**: The Growing Spellbook
-   - Pages collected from bosses and exploration
-   - Chapters unlock new dungeon levels
-   - Meta-progression through permanent abilities
+6. **Progression**: Boss-Gated Stairwell System
+   - Every level ALWAYS has at least one boss (guaranteed)
+   - Boss placement uses 90% probability decay from farthest room
+   - Never spawns in player's room, forced placement if needed
+   - Stairwells only appear after defeating floor boss
+   - Shimmery materialization animation on boss defeat
 
 ### Implementation Priority (for Cole's reading level)
 Focus on grades K-3 mechanics first:
@@ -360,6 +394,60 @@ Advanced SAT-style mechanics will be implemented once core systems are proven an
 - **Volume Sliders**: Separate controls for music, SFX, voice
 - **Audio Descriptions**: Optional descriptive audio for visual elements
 
+## Security and Deployment Considerations
+
+### Speech Recognition API Security (CRITICAL FOR PRODUCTION)
+
+**Current Issue**: OpenAI API key exposed in client-side code via environment variables
+- `VITE_OPENAI_API_KEY` is bundled into the client application
+- API key visible to anyone who inspects the code or network traffic
+- Potential for API abuse and unauthorized usage charges
+
+**Required Solution: Proxy Service**
+
+#### Backend Proxy Service Requirements
+- **Authentication**: Simple session-based auth for game users
+- **Rate Limiting**: Prevent API abuse (e.g., 30 requests/minute per user)
+- **Usage Monitoring**: Track API costs and usage patterns
+- **Error Handling**: Graceful fallbacks when service is unavailable
+- **CORS Configuration**: Allow requests from game domain
+
+#### API Endpoint Design
+```
+POST /api/speech/recognize
+Headers:
+  - Authorization: Bearer <session-token>
+  - Content-Type: audio/webm
+Body: <audio-blob>
+Response: { text: string, confidence: number }
+```
+
+#### Client-Side Changes Required
+- Remove `VITE_OPENAI_API_KEY` environment variable
+- Update `StreamingSpeechService` to call proxy instead of OpenAI directly
+- Add session management for proxy authentication
+- Implement retry logic for network failures
+
+#### Deployment Architecture
+```
+[Game Client] → [Proxy Service] → [OpenAI Whisper API]
+     ↓              ↓                    ↓
+  No API Key    Secure API Key      Speech Recognition
+  Rate Limited   Usage Tracking     Cost Management
+```
+
+#### Implementation Priority
+- **Phase 1**: Basic proxy with API key protection
+- **Phase 2**: Rate limiting and usage monitoring
+- **Phase 3**: Advanced features (user analytics, cost optimization)
+
+#### Alternative Solutions Considered
+- **Browser Speech Recognition**: Less accurate, limited browser support
+- **Offline Speech Recognition**: Large model downloads, performance issues
+- **Third-party Services**: Additional vendor dependency, potential privacy concerns
+
+**Status**: ⚠️ REQUIRED BEFORE PRODUCTION DEPLOYMENT
+
 ## Technical Architecture Decisions
 
 ### Input Handling (CRITICAL)
@@ -389,6 +477,204 @@ inputElement.addEventListener('keydown', handler)
 // ✅ ALWAYS DO THIS
 this.input.keyboard.on('keydown-SPACE', handler)
 ```
+
+### Audio Recording Architecture (CRITICAL)
+**Decision: Continuous recording with tap-in processing**
+
+**Rationale:**
+- Eliminates MediaRecorder initialization delays (critical for Safari)
+- Zero-latency recording start when spacebar is pressed
+- No missed audio from initialization timing issues
+- Smooth user experience without recording startup glitches
+
+**Implementation:**
+1. **Pre-warm MediaRecorder** at game start (during scene creation)
+2. **Keep recorder always running** in a circular buffer mode
+3. **Tap into stream** when spacebar is pressed (process buffered audio)
+4. **Discard unused audio** when no spell casting is active
+5. **Clean up recorder** only on scene shutdown or game end
+
+**Technical Details:**
+- MediaRecorder runs continuously with timeslice events
+- Audio chunks are buffered but only processed when needed
+- When spacebar pressed, immediately process accumulated buffer
+- This approach trades minimal CPU/memory overhead for perfect responsiveness
+
+**Benefits:**
+- No first-recording failure issues
+- No initialization delay on spell cast
+- Consistent recording quality across all attempts
+- Works reliably across all browsers (especially Safari)
+
+## Runic Augmentation System (Phase 1 Implementation)
+
+### Core Design Principles
+- **Beginner-Friendly**: Simple words (K-3 reading level) with text-to-speech support
+- **Limited Complexity**: Only 3 equipment slots (1 prefix + 1 suffix + 1 core)
+- **Stacking Progression**: Runes level up instead of cluttering inventory (Flame I → II → III)
+- **Meaningful Choices**: Each rune provides clear, visible effects
+
+### Rune Types and Slots
+
+#### Prefix Runes (modify spell beginning)
+- **Flame**: Adds fire damage (+25% per level)
+- **Ice**: Increases casting speed (+15% per level)
+- **Big**: Major damage boost (+40% per level, max 3)
+
+#### Suffix Runes (modify spell ending)
+- **Blast**: Area effect, hits nearby enemies (+1 target per level)
+- **Heal**: Restores player health when casting (+5 HP per level)
+- **Shield**: Grants temporary protection (+3 shield per level)
+
+#### Core Runes (modify base behavior)
+- **Echo**: Spell repeats/chains (+1 repeat per level, max 2)
+- **Power**: Overall damage amplification (+30% per level)
+
+### Rune Mechanics
+
+#### Acquisition and Leveling
+- **Drop System**: Enemies drop runes based on rarity (70% common, 25% rare, 5% epic)
+- **Stacking**: Duplicate runes automatically level up existing ones
+- **Max Levels**: 3-5 levels per rune type to prevent overwhelming complexity
+- **Reading Practice**: Players hear rune names via TTS for vocabulary building
+
+#### Equipment System
+- **Single Slots**: Only one rune per type (prefix/suffix/core) to avoid analysis paralysis
+- **Hot-Swapping**: Can change runes between combat encounters
+- **Visual Feedback**: Clear display of active effects and damage numbers
+
+#### Rune Effects in Combat
+- **Damage Multipliers**: Stack multiplicatively for interesting combinations
+- **Area Effects**: "Blast" suffix hits additional enemies in range
+- **Self-Healing**: "Heal" suffix provides sustain without making game too easy
+- **Echo Chains**: "Echo" core creates spell repetition for advanced players
+
+### Health Recovery System
+
+#### Consumable Types
+- **Food Items**: Common drops, small healing (10-15 HP)
+  - Apple, Bread, Cheese (K-2 reading level)
+- **Potions**: Rare drops, medium healing (25-30 HP)
+  - Red Potion, Blue Potion (Grade 3 reading level)
+- **Fairies**: Epic drops, large healing (50 HP)
+  - Healing Fairy (Grade 4 reading level)
+
+#### Scarcity Mechanics
+- **Limited Inventory**: 8 slots maximum to force strategic decisions
+- **Reading Requirement**: Must read "use text" to consume items
+  - "eat apple", "drink potion", "call fairy"
+- **Drop Rates**: 70% chance for drops, improving on higher floors
+- **No Automatic Healing**: All recovery requires player action and reading
+- **Strategic Timing**: Items cannot be used during combat (must plan ahead)
+
+#### Consumable Usage Mechanics
+- **Text-to-Speech**: Item names and use-text read aloud for learning
+- **Inventory Management**: Players must choose which items to keep
+- **Quantity Stacking**: Same items stack together (e.g., "Apple x3")
+- **Progressive Vocabulary**: Higher floor items require more advanced reading
+- **Use Confirmation**: Players must correctly read the use-text to consume
+
+#### Dual Acquisition System
+
+**Shop Purchases (Primary Source)**
+- **Guaranteed Access**: Every level has at least one shop room
+- **Gold Word Currency**: Earned from defeating enemies and word mastery
+- **Shop Pricing Strategy**:
+  - Floor 1-2: Apple (5 gold), Bread (8 gold), Cheese (6 gold)
+  - Floor 3-4: + Red Potion (20 gold), Blue Potion (25 gold)
+  - Floor 5+: + Healing Fairy (50 gold)
+- **Reading Requirement**: Must read item names to purchase
+- **Haggling Potential**: Future feature for persuasion vocabulary
+
+**Enemy Drops (Secondary Source)**
+- **Rare Drops**: 15-20% chance from regular enemies
+- **Boss Guaranteed**: Always drop rare/epic consumables + runes
+- **Floor Scaling**: Higher floors = better drop chances and rarity
+- **Excitement Factor**: "Bonus healing!" creates positive surprises
+
+#### Gold Words Currency System
+
+**Value Calculation Algorithm**
+- **Base Value by Complexity**:
+  - Simple words (K-2): 2 gold words (cat, dog, run)
+  - Medium words (3-4): 4-6 gold words (dragon, castle, magic)
+  - Complex words (5+): 7-10 gold words (adventure, mysterious, powerful)
+- **Reading Level Bonus**: +0.5 gold per grade level
+- **Word Length Bonus**: +0.5 gold per letter beyond 3 characters
+- **Example**: "mysterious" (Grade 6, 10 letters) = 7 base + 3 level + 3.5 length = 13.5 → 13 gold
+
+**Enemy Reward Scaling**
+- **Base Rewards**: 3 gold words minimum
+- **Enemy Type Multipliers**:
+  - Goblin: 1.0x, Bat: 0.8x, Skeleton: 1.2x
+  - Slime: 1.1x, Orc: 1.5x, Demon/Boss: 2.0x
+- **Floor Scaling**: +1.5 gold per floor level
+- **Enemy Level Bonus**: +2 gold per enemy level
+- **Variance**: ±25% randomization for excitement
+
+**Economic Balance**
+- **Shop Pricing Strategy**:
+  - Basic food (5-8 gold): Affordable frequent healing
+  - Potions (20-25 gold): Significant investment decisions
+  - Rare items (50+ gold): Major purchases requiring planning
+- **Income vs. Expenses**: Designed for 70% shop reliance, 30% lucky drops
+- **Strategic Decisions**: Immediate healing vs. saving for equipment
+- **Floor Progression**: Higher floors = better income and more expensive items
+
+### User Interface Design
+
+#### Hot-Bar Consumable System
+- **Direct Number Keys**: Press 1-4 to use consumables instantly
+- **Visual Hot-Bar**: Bottom screen display with icons, names, quantities
+  ```
+  [1] 🍎 Apple x3    [2] 🧪 Potion x1    [3] 🍞 Bread x2    [4] Empty
+  ```
+- **Auto-Population**: Most useful items automatically fill empty slots
+- **Immediate Feedback**: "+10 HP" floats up, slot updates in real-time
+- **No Voice Required**: Simple key press, no speech confirmation needed
+
+#### Equipment Management
+- **Tab Key**: Opens rune equipment screen
+- **Three Clear Slots**: Prefix | Core | Suffix with visual effects
+- **Simple Interaction**: Click to equip/swap runes between fights
+- **Visual Confirmation**: Shows active effects and damage bonuses
+- **TTS Support**: Reads rune names and effects on hover
+
+#### Shop Interface
+- **Room-Based**: Enter shop rooms to access merchant
+- **Gold Word Display**: Shows current currency at top of screen
+- **Reading Practice**: Must read item names to purchase
+- **Price Transparency**: Clear cost display for strategic decisions
+- **Inventory Integration**: Purchased items auto-fill hot-bar slots
+
+#### Accessibility Features
+- **Large Icons**: Clear visuals for young readers
+- **Audio Feedback**: TTS for item names, effects, and instructions
+- **Color Coding**: Rarity-based colors (white/blue/purple for common/rare/epic)
+- **Simple Navigation**: Arrow keys for menu access, ESC to close
+
+### Integration with Existing Systems
+
+#### Combat Enhancements
+- Rune effects apply to existing spell chain combat system
+- Damage calculations modified by equipped rune multipliers
+- Area effects work with current enemy targeting
+
+#### Word Recognition
+- Rune names chosen for age-appropriate vocabulary building
+- Consumable use-text provides additional reading practice
+- TTS support ensures accessibility for struggling readers
+
+#### Progression Balance
+- Health scarcity prevents trivializing combat encounters
+- Rune progression provides clear power advancement
+- Limited slots maintain decision complexity without overwhelming
+
+### Future Expansion Hooks
+- **Advanced Runes**: Higher grade vocabulary for older students
+- **Combination Effects**: Special bonuses for specific rune pairings
+- **Companion Spirits**: Additional progression system for advanced players
+- **Rune Crafting**: Combine lower-level runes to create custom effects
 
 ## Implementation Status
 

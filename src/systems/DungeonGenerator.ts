@@ -16,6 +16,8 @@ export interface Dungeon {
   rooms: Room[]
   tiles: number[][]
   playerStart: { x: number, y: number }
+  bossRoom: Room | null
+  stairwellPosition: { x: number, y: number } | null
 }
 
 export class DungeonGenerator {
@@ -25,34 +27,42 @@ export class DungeonGenerator {
 
   generate(floor: number): Dungeon {
     const { ROOM_CONFIG } = GAME_CONFIG
-    
+
     // Calculate room count with improved scaling
     const numRooms = Math.min(
       ROOM_CONFIG.BASE_ROOMS + Math.floor(floor * ROOM_CONFIG.ROOMS_PER_FLOOR),
       ROOM_CONFIG.MAX_ROOMS
     )
-    
+
     const dungeonWidth = 30 + Math.floor(floor * 2)
     const dungeonHeight = 24 + Math.floor(floor * 1.5)
-    
+
     const tiles = this.createEmptyDungeon(dungeonWidth, dungeonHeight)
     const rooms = this.generateRooms(dungeonWidth, dungeonHeight, numRooms, floor)
-    
+
+    // Apply distance-based boss placement
+    const bossRoom = this.assignBossRoom(rooms)
+
     // Carve out rooms
     rooms.forEach(room => this.carveRoom(tiles, room))
-    
+
     // Connect rooms with corridors
     this.connectRooms(tiles, rooms)
-    
+
     // Add doors
     this.addDoors(tiles, rooms)
-    
+
+    // Determine stairwell position (in boss room)
+    const stairwellPosition = bossRoom ? { x: bossRoom.centerX, y: bossRoom.centerY } : null
+
     return {
       width: dungeonWidth,
       height: dungeonHeight,
       rooms,
       tiles,
-      playerStart: { x: rooms[0].centerX, y: rooms[0].centerY }
+      playerStart: { x: rooms[0].centerX, y: rooms[0].centerY },
+      bossRoom,
+      stairwellPosition
     }
   }
 
@@ -96,15 +106,68 @@ export class DungeonGenerator {
     return rooms
   }
 
-  private getRoomType(roomIndex: number, totalRooms: number, _floor: number): Room['type'] {
+  private getRoomType(roomIndex: number, _totalRooms: number, _floor: number): Room['type'] {
     if (roomIndex === 0) return 'combat' // Start room
-    if (roomIndex === totalRooms - 1) return 'boss' // Final room
-    
+    // Boss room will be assigned later via distance-based algorithm
+
     const rand = Math.random()
     if (rand < 0.5) return 'combat'
     if (rand < 0.7) return 'treasure'
     if (rand < 0.85) return 'puzzle'
     return 'shop'
+  }
+
+  /**
+   * Assigns boss room using distance-based probability decay algorithm.
+   * Guaranteed to place exactly one boss on every level.
+   * @returns The room that was assigned as the boss room
+   */
+  private assignBossRoom(rooms: Room[]): Room | null {
+    if (rooms.length < 2) {
+      console.warn('Not enough rooms to place boss away from player')
+      if (rooms.length === 1) {
+        rooms[0].type = 'boss' // Edge case: only one room
+        return rooms[0]
+      }
+      return null
+    }
+
+    const playerRoom = rooms[0] // First room is always player start
+
+    // Calculate Manhattan distance from player room to all other rooms
+    const roomDistances = rooms.slice(1).map((room, index) => ({
+      room,
+      originalIndex: index + 1,
+      distance: Math.abs(room.centerX - playerRoom.centerX) + Math.abs(room.centerY - playerRoom.centerY)
+    }))
+
+    // Sort by distance (farthest first)
+    roomDistances.sort((a, b) => b.distance - a.distance)
+
+    // Apply 90% probability decay algorithm
+    let bossPlaced = false
+    const PLACEMENT_PROBABILITY = 0.9
+
+    for (let i = 0; i < roomDistances.length - 1; i++) { // -1 to never place in closest room
+      const currentProbability = Math.pow(PLACEMENT_PROBABILITY, i)
+
+      if (Math.random() < currentProbability) {
+        roomDistances[i].room.type = 'boss'
+        bossPlaced = true
+        console.log(`Boss placed in room ${roomDistances[i].originalIndex} (distance: ${roomDistances[i].distance}, probability: ${(currentProbability * 100).toFixed(1)}%)`)
+        return roomDistances[i].room
+      }
+    }
+
+    // Guarantee: If no boss placed yet, force placement in second-farthest room
+    if (!bossPlaced) {
+      const secondFarthest = roomDistances[Math.min(1, roomDistances.length - 1)]
+      secondFarthest.room.type = 'boss'
+      console.log(`Boss force-placed in second-farthest room ${secondFarthest.originalIndex} (distance: ${secondFarthest.distance})`)
+      return secondFarthest.room
+    }
+
+    return null // Should never reach here
   }
 
   private roomOverlaps(newRoom: Room, existingRooms: Room[]): boolean {
