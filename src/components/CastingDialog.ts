@@ -665,6 +665,10 @@ export class CastingDialog extends Phaser.GameObjects.Container {
       this.timerTween.destroy();
     }
 
+    // Kill all tweens targeting this container and its children to prevent callbacks after destroy
+    this.scene.tweens.killTweensOf(this);
+    this.scene.tweens.killTweensOf(this.list); // All children in the container
+
     // Animate out
     this.scene.tweens.add({
       targets: this,

@@ -6,6 +6,13 @@ export interface SpeechRecognitionResult {
   isTimeout: boolean
   isError: boolean
   errorMessage?: string
+  pronunciationFeedback?: {
+    whatTheySaid: string
+    whatTheyShouldSay: string
+    errorExplanation: string
+    correctionTip: string
+    practiceWords?: string[]
+  }
 }
 
 export interface SpeechRecognitionOptions {
@@ -234,69 +241,58 @@ export class SpeechRecognitionService {
     console.log('Target word:', targetWord)
 
     try {
-      // Convert webm to wav for better Whisper compatibility
-      const wavBlob = await this.convertToWav(audioBlob)
-      console.log('After conversion - blob size:', wavBlob.size, 'bytes')
+      // Import services dynamically
+      const { WhisperService } = await import('./WhisperService')
+      const { PronunciationAnalyzer } = await import('./PronunciationAnalyzer')
+      const { getMatchQuality } = await import('../utils/fuzzyMatch')
 
-      const formData = new FormData()
-      formData.append('file', wavBlob, 'audio.wav')
-      formData.append('model', 'whisper-1')
-      formData.append('language', 'en')
-      formData.append('response_format', 'verbose_json')
-      formData.append('prompt', `The user should say the word: ${targetWord}`)
+      const whisperService = new WhisperService()
+      const pronunciationAnalyzer = new PronunciationAnalyzer()
 
-      console.log('Sending request to Whisper API...')
-
-      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: formData
-      })
-
-      console.log('API response status:', response.status, response.statusText)
-
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`)
-      }
-
-      const data = await response.json()
-      console.log('Whisper API response:', data)
-
-      const transcribedText = data.text?.toLowerCase().trim() || ''
+      // Phase 1: Fast Whisper transcription
+      const whisperResult = await whisperService.transcribe(audioBlob, 'en')
+      const transcribedText = whisperResult.text.toLowerCase().trim()
       const targetLower = targetWord.toLowerCase().trim()
 
       console.log(`Transcribed: "${transcribedText}" vs Target: "${targetLower}"`)
 
-      // Handle repeated words and exclamations
+      // Clean transcription (remove repeated words, punctuation)
       const cleanedText = this.cleanTranscription(transcribedText, targetLower)
 
-      // Calculate pronunciation accuracy
-      const accuracy = this.calculatePronunciationAccuracy(cleanedText, targetLower)
-      console.log('Cleaned text:', cleanedText)
-      console.log('Pronunciation accuracy:', accuracy)
+      // Check if it's a match using fuzzy matching
+      const matchQuality = getMatchQuality(targetLower, cleanedText)
+      console.log(`Match quality: ${matchQuality.quality} (${(matchQuality.similarity * 100).toFixed(1)}%)`)
 
-      // Determine if it's a critical hit (95%+ accuracy)
-      const isCriticalHit = accuracy >= 0.95
+      const isMatch = matchQuality.isMatch
+      const isCriticalHit = matchQuality.quality === 'exact' || matchQuality.quality === 'excellent'
 
-      // Use confidence from Whisper if available, otherwise use our accuracy calculation
-      const confidence = data.confidence || accuracy
-
-      console.log('Final result:', {
-        text: transcribedText,
-        confidence,
-        pronunciation_score: accuracy,
-        isCriticalHit
-      })
+      // Phase 2: If NOT a match, get pronunciation feedback (GPT-4o-mini)
+      let pronunciationFeedback = undefined
+      if (!isMatch) {
+        console.log('❌ Mismatch detected - analyzing pronunciation error...')
+        try {
+          const feedback = await pronunciationAnalyzer.analyzePronunciation(
+            targetWord,
+            cleanedText,
+            1, // TODO: Get actual grade level from player
+            audioBlob
+          )
+          pronunciationFeedback = feedback
+          console.log('📚 Pronunciation feedback received:', feedback.errorExplanation)
+        } catch (error) {
+          console.warn('⚠️ Pronunciation analysis failed:', error)
+          // Continue without feedback
+        }
+      }
 
       return {
-        text: cleanedText,  // Return cleaned text
-        confidence,
-        pronunciation_score: accuracy,
+        text: cleanedText,
+        confidence: whisperResult.confidence,
+        pronunciation_score: matchQuality.similarity,
         isCriticalHit,
         isTimeout: false,
-        isError: false
+        isError: false,
+        pronunciationFeedback
       }
     } catch (error) {
       console.error('Transcription failed:', error)
@@ -304,63 +300,8 @@ export class SpeechRecognitionService {
     }
   }
 
-  private async convertToWav(webmBlob: Blob): Promise<Blob> {
-    // For now, we'll just pass the original blob
-    // In production, you might want to use a library like ffmpeg.js
-    // to properly convert to WAV format
-    return webmBlob
-  }
-
-  private calculatePronunciationAccuracy(spoken: string, target: string): number {
-    if (!spoken || !target) return 0
-
-    // Remove extra whitespace and punctuation
-    const cleanSpoken = spoken.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim()
-    const cleanTarget = target.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim()
-
-    // Exact match gets perfect score
-    if (cleanSpoken === cleanTarget) return 1.0
-
-    // Calculate Levenshtein distance for similarity
-    const distance = this.levenshteinDistance(cleanSpoken, cleanTarget)
-    const maxLength = Math.max(cleanSpoken.length, cleanTarget.length)
-
-    if (maxLength === 0) return 0
-
-    const similarity = 1 - (distance / maxLength)
-
-    // Give bonus for getting the word mostly right
-    if (similarity > 0.7) {
-      return Math.min(1.0, similarity + 0.1)
-    }
-
-    return Math.max(0, similarity)
-  }
-
-  private levenshteinDistance(str1: string, str2: string): number {
-    const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null))
-
-    for (let i = 0; i <= str1.length; i++) {
-      matrix[0][i] = i
-    }
-
-    for (let j = 0; j <= str2.length; j++) {
-      matrix[j][0] = j
-    }
-
-    for (let j = 1; j <= str2.length; j++) {
-      for (let i = 1; i <= str1.length; i++) {
-        const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1
-        matrix[j][i] = Math.min(
-          matrix[j][i - 1] + 1, // deletion
-          matrix[j - 1][i] + 1, // insertion
-          matrix[j - 1][i - 1] + indicator // substitution
-        )
-      }
-    }
-
-    return matrix[str2.length][str1.length]
-  }
+  // Helper methods for convertToWav, calculatePronunciationAccuracy, and levenshteinDistance
+  // have been removed as they are now handled by WhisperService and fuzzyMatch utilities
 
   isSupported(): boolean {
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)

@@ -275,45 +275,18 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
     // Apply elemental effectiveness (future feature)
     let finalDamage = damage;
 
-    // Apply damage
-    enemy.stats.health = Math.max(0, enemy.stats.health - finalDamage);
-
+    // Emit damage event - GameScene will apply it to the Enemy instance via enemy.takeDamage()
+    // The Enemy class handles health modification, death, and emitting enemyDied event
     this.emit('damageDealt', {
       targetId,
       damage: finalDamage,
       element,
-      remainingHealth: enemy.stats.health
+      remainingHealth: enemy.stats.health // Current health before damage
     });
 
-    // Check if enemy defeated
-    if (enemy.stats.health <= 0) {
-      this.defeatEnemy(targetId);
-    }
-  }
-
-  private defeatEnemy(enemyId: string): void {
-    const enemy = this.enemies.get(enemyId);
-    if (!enemy) return;
-
-    this.emit('enemyDefeated', {
-      enemyId,
-      enemyName: enemy.name,
-      rewards: this.calculateRewards(enemy)
-    });
-
-    this.removeEnemy(enemyId);
-  }
-
-  private calculateRewards(enemy: CombatEntity): any {
-    // Calculate gold words based on enemy difficulty
-    const baseReward = 10;
-    const difficultyMultiplier = enemy.stats.maxHealth / 50;
-
-    return {
-      goldWords: Math.floor(baseReward * difficultyMultiplier),
-      experience: Math.floor(enemy.stats.maxHealth / 10),
-      items: [] // Future: drop items
-    };
+    // Note: We do NOT modify enemy.stats.health here or call defeatEnemy()
+    // The Enemy instance handles death via takeDamage() -> die() -> emit('enemyDied')
+    // GameScene.enemyDied handler awards rewards and calls removeEnemy()
   }
 
   private getNearestEnemy(): CombatEntity | null {

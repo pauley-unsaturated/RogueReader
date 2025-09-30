@@ -715,14 +715,9 @@ export class GameScene extends Phaser.Scene {
       }
     })
 
-    this.combatSystem.on('enemyDefeated', (data: any) => {
-      console.log(`🎖️ enemyDefeated event received for ${data.enemyId}`)
-      this.showReward(data.rewards.goldWords, 'Gold Words')
-      // Remove enemy from array
-      const beforeCount = this.enemies.length
-      this.enemies = this.enemies.filter(e => e.getCombatEntity().id !== data.enemyId)
-      console.log(`  Removed enemy from array: ${beforeCount} -> ${this.enemies.length}`)
-    })
+    // Note: enemyDefeated event removed - now using enemyDied from Enemy class
+    // This prevents duplicate handling and ensures proper death flow:
+    // CombatSystem.dealDamage() -> damageDealt event -> enemy.takeDamage() -> enemy.die() -> enemyDied event
 
     // Listen for damage being dealt
     this.combatSystem.on('damageDealt', (data: any) => {

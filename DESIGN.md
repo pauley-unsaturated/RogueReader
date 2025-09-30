@@ -581,6 +581,99 @@ const response = await gpt4oMini({
 - Session authentication
 - Request caching for repeated words
 
+### Future Optimization: Pronunciation Caching (TODO)
+
+**Current State**: Generate pronunciation feedback on-demand via GPT-4o-mini (costs ~$0.0001 per error)
+
+**Future Goal**: Pre-generate and cache all pronunciation data to eliminate runtime API costs
+
+**Implementation Plan**:
+
+1. **Build-Time Generation Script** (`scripts/generatePronunciationData.ts`)
+   - Use GPT-4o-mini to generate pronunciation data for all curriculum words (~2000 words)
+   - Generate common error patterns for each word
+   - Store in structured JSON format
+
+2. **Data Structure** (`public/data/pronunciations.json`):
+   ```json
+   {
+     "rabbit": {
+       "ipa": "/ˈræb.ɪt/",
+       "syllables": ["rab", "bit"],
+       "phoneme_groups": ["ræb", "ɪt"],
+       "common_errors": {
+         "wabbit": {
+           "errorExplanation": "You said 'wabbit' instead of 'rabbit'. The /r/ sound was replaced with /w/.",
+           "correctionTip": "For the /r/ sound, curl your tongue back and make a 'rrr' sound.",
+           "practiceWords": ["run", "red", "rabbit"]
+         },
+         "rabit": {
+           "errorExplanation": "You said 'rabit' with one 'b'. The word 'rabbit' has two 'b's.",
+           "correctionTip": "Say 'rab' (pause) 'bit'. Notice the double 'b' sound.",
+           "practiceWords": ["rubber", "hobby", "rabbit"]
+         }
+       },
+       "pronunciation_tips": "Start with 'rab' like 'grab', then 'bit' like 'sit'."
+     },
+     "elephant": {
+       "ipa": "/ˈel.ɪ.fənt/",
+       "syllables": ["el", "e", "phant"],
+       "phoneme_groups": ["ɛl", "ɪ", "fənt"],
+       "common_errors": {
+         "elefant": {
+           "errorExplanation": "You skipped the 'ph' sound. It makes an /f/ sound.",
+           "correctionTip": "The letters 'ph' together make the /f/ sound, like 'phone'.",
+           "practiceWords": ["phone", "photo", "elephant"]
+         }
+       },
+       "pronunciation_tips": "Three parts: 'el' (like L), 'e' (short eh), 'phant' (like font with f)."
+     }
+   }
+   ```
+
+3. **Fallback Strategy**:
+   - **Primary**: Look up error in cache by fuzzy matching transcription
+   - **Secondary**: If exact error not found, look up general word tips
+   - **Tertiary**: If word not in cache, call GPT-4o-mini live (fallback)
+
+4. **TTS Audio Pre-generation** (Optional Phase 2):
+   ```json
+   {
+     "rabbit": {
+       "audio_files": {
+         "normal": "/audio/pronunciations/rabbit_normal.mp3",
+         "slow": "/audio/pronunciations/rabbit_slow.mp3",
+         "syllable_0": "/audio/pronunciations/rabbit_syl_0.mp3",
+         "syllable_1": "/audio/pronunciations/rabbit_syl_1.mp3",
+         "teaching": "/audio/pronunciations/rabbit_teaching.mp3"
+       }
+     }
+   }
+   ```
+
+5. **Benefits**:
+   - ✅ Zero API costs during gameplay (except for uncached errors)
+   - ✅ Instant feedback (no 800ms-1.5s GPT-4o-mini latency)
+   - ✅ Offline capability
+   - ✅ Consistent, high-quality feedback across all words
+   - ✅ Reduced dependency on external APIs
+
+6. **Generation Cost Estimate**:
+   - ~2000 curriculum words × 5 common errors per word = 10,000 GPT-4o-mini calls
+   - Cost: 10,000 × $0.0001 = **$1.00 one-time cost**
+   - Saves: ~$0.0001 per error × thousands of student errors = **significant savings**
+
+7. **Implementation Files**:
+   - `scripts/generatePronunciationData.ts` - Generation script
+   - `scripts/generatePronunciationAudio.ts` - TTS audio generation
+   - `public/data/pronunciations.json` - Cached pronunciation data
+   - `public/audio/pronunciations/` - Pre-generated TTS files
+   - `src/services/PronunciationCache.ts` - Cache lookup service
+
+**Status**: ⚠️ **DEFERRED** until after initial Whisper integration is complete and tested
+
+**Priority**: Medium (cost savings and performance improvement, but not blocking)
+
 ### Migration Path from Current Implementation
 
 **Current State** (`StreamingSpeechService`):
