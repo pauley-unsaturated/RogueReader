@@ -401,4 +401,31 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
   public updatePlayerPosition(x: number, y: number): void {
     this.player.gridPosition = { x, y };
   }
+
+  /**
+   * Clear all combat state when advancing to next floor
+   */
+  public clearAll(): void {
+    // Clear all enemies
+    this.enemies.clear();
+
+    // Reset combat state
+    this.isInCombat = false;
+
+    // Reset combo
+    this.comboState = {
+      count: 0,
+      multiplier: 1.0,
+      lastCastTime: 0,
+      timeWindow: 3000
+    };
+
+    // Clear spell history
+    this.spellHistory = [];
+
+    // Clear word complexity bonuses
+    this.wordComplexityBonus.clear();
+
+    console.log('🧹 CombatSystem cleared for new floor');
+  }
 }

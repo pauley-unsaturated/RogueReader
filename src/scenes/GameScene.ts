@@ -716,9 +716,12 @@ export class GameScene extends Phaser.Scene {
     })
 
     this.combatSystem.on('enemyDefeated', (data: any) => {
+      console.log(`🎖️ enemyDefeated event received for ${data.enemyId}`)
       this.showReward(data.rewards.goldWords, 'Gold Words')
       // Remove enemy from array
+      const beforeCount = this.enemies.length
       this.enemies = this.enemies.filter(e => e.getCombatEntity().id !== data.enemyId)
+      console.log(`  Removed enemy from array: ${beforeCount} -> ${this.enemies.length}`)
     })
 
     // Listen for damage being dealt
@@ -747,10 +750,12 @@ export class GameScene extends Phaser.Scene {
 
     // Listen for enemy deaths
     this.events.on('enemyDied', (data: any) => {
+      console.log(`💀 enemyDied event received for ${data.id}`)
       this.combatSystem.removeEnemy(data.id)
 
       // Find the enemy to get its details for rewards
       const enemy = this.enemies.find(e => e.id === data.id)
+      console.log(`  Found enemy in array: ${!!enemy}`)
       if (enemy) {
         const config = (enemy as any).config // Access enemy config
 
@@ -822,7 +827,20 @@ export class GameScene extends Phaser.Scene {
     this.spawnEnemies()
 
     // Move player to new start position
-    this.player.setGridPosition(this.dungeon.playerStart.x, this.dungeon.playerStart.y)
+    this.player.gridX = this.dungeon.playerStart.x
+    this.player.gridY = this.dungeon.playerStart.y
+
+    // Update sprite position to match grid position
+    const pixelX = this.player.gridX * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2
+    const pixelY = this.player.gridY * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2
+    this.player.setPosition(pixelX, pixelY)
+
+    // Ensure player is visible and on correct layer
+    this.player.setVisible(true)
+    this.player.setAlpha(1)
+    this.player.setDepth(10) // Above tiles (which are at depth 0)
+
+    console.log(`👤 Player repositioned to (${this.player.gridX}, ${this.player.gridY}) = pixel (${pixelX}, ${pixelY})`)
 
     // Update UI or show floor transition message
     console.log(`✨ Welcome to floor ${this.currentFloor}!`)

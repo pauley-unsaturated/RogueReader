@@ -40,8 +40,14 @@ export class DungeonGenerator {
     const tiles = this.createEmptyDungeon(dungeonWidth, dungeonHeight)
     const rooms = this.generateRooms(dungeonWidth, dungeonHeight, numRooms, floor)
 
+    // Debug: Log room types before boss assignment
+    console.log('🏠 Room types before boss assignment:', rooms.map((r, i) => `${i}:${r.type}`).join(', '))
+
     // Apply distance-based boss placement
     const bossRoom = this.assignBossRoom(rooms)
+
+    // Debug: Log room types after boss assignment
+    console.log('🏠 Room types after boss assignment:', rooms.map((r, i) => `${i}:${r.type}`).join(', '))
 
     // Carve out rooms
     rooms.forEach(room => this.carveRoom(tiles, room))
@@ -141,8 +147,16 @@ export class DungeonGenerator {
       distance: Math.abs(room.centerX - playerRoom.centerX) + Math.abs(room.centerY - playerRoom.centerY)
     }))
 
-    // Sort by distance (farthest first)
-    roomDistances.sort((a, b) => b.distance - a.distance)
+    // Sort by: 1) Non-combat rooms first (to preserve combat rooms), 2) Distance (farthest first)
+    roomDistances.sort((a, b) => {
+      // Prioritize non-combat rooms for boss conversion
+      const aIsCombat = a.room.type === 'combat' ? 1 : 0
+      const bIsCombat = b.room.type === 'combat' ? 1 : 0
+      if (aIsCombat !== bIsCombat) return aIsCombat - bIsCombat
+
+      // Then sort by distance (farthest first)
+      return b.distance - a.distance
+    })
 
     // Apply 90% probability decay algorithm
     let bossPlaced = false
@@ -152,9 +166,10 @@ export class DungeonGenerator {
       const currentProbability = Math.pow(PLACEMENT_PROBABILITY, i)
 
       if (Math.random() < currentProbability) {
+        const oldType = roomDistances[i].room.type
         roomDistances[i].room.type = 'boss'
         bossPlaced = true
-        console.log(`Boss placed in room ${roomDistances[i].originalIndex} (distance: ${roomDistances[i].distance}, probability: ${(currentProbability * 100).toFixed(1)}%)`)
+        console.log(`Boss placed in room ${roomDistances[i].originalIndex} (was: ${oldType}, distance: ${roomDistances[i].distance}, probability: ${(currentProbability * 100).toFixed(1)}%)`)
         return roomDistances[i].room
       }
     }
@@ -162,8 +177,9 @@ export class DungeonGenerator {
     // Guarantee: If no boss placed yet, force placement in second-farthest room
     if (!bossPlaced) {
       const secondFarthest = roomDistances[Math.min(1, roomDistances.length - 1)]
+      const oldType = secondFarthest.room.type
       secondFarthest.room.type = 'boss'
-      console.log(`Boss force-placed in second-farthest room ${secondFarthest.originalIndex} (distance: ${secondFarthest.distance})`)
+      console.log(`Boss force-placed in second-farthest room ${secondFarthest.originalIndex} (was: ${oldType}, distance: ${secondFarthest.distance})`)
       return secondFarthest.room
     }
 

@@ -394,6 +394,256 @@ Advanced SAT-style mechanics will be implemented once core systems are proven an
 - **Volume Sliders**: Separate controls for music, SFX, voice
 - **Audio Descriptions**: Optional descriptive audio for visual elements
 
+## Speech Recognition & Pronunciation System
+
+### Architecture Overview (Hybrid Approach)
+
+**Primary Goal**: Low-latency word verification with intelligent pronunciation feedback when needed.
+
+**System Components**:
+1. **Whisper API** (Primary Recognition) - Fast transcription (100-300ms)
+2. **GPT-4o-mini** (Pronunciation Analysis) - Detailed feedback on errors only
+3. **TTS (tts-1)** (Pronunciation Teaching) - Generate word pronunciation audio
+
+### Speech Recognition Pipeline
+
+#### Phase 1: Fast Verification (Whisper)
+```
+User speaks word → Whisper API → Compare with target word
+  ✓ Match → Success! Continue gameplay
+  ✗ Mismatch → Trigger pronunciation analysis
+```
+
+**Latency Target**: 100-300ms for correct pronunciations
+
+**Implementation**:
+- Use Whisper `base` model for speed-accuracy balance
+- Stream audio in real-time using continuous recording
+- Compare transcription with expected word using fuzzy matching
+
+#### Phase 2: Intelligent Feedback (GPT-4o-mini, on mismatch only)
+```
+Whisper says wrong word → Send to GPT-4o-mini with:
+  - Target word: "rabbit"
+  - Audio recording
+  - Prompt: "Explain how the speaker mispronounced this word. Be specific about phonemes."
+
+GPT Response:
+  "The speaker said 'wabbit' instead of 'rabbit'.
+   The /r/ sound was replaced with /w/.
+   Practice saying /r/ by curling tongue back."
+```
+
+**Latency**: 800ms-1.5s (only on errors, doesn't impact normal gameplay)
+
+**Benefits**:
+- Fast response for correct pronunciations (most common case)
+- Detailed, actionable feedback only when needed
+- Reduces API costs by only analyzing errors
+
+### Pronunciation Teaching System
+
+#### Word Pronunciation Database Structure
+
+For each word in the curriculum, pre-generate:
+
+```json
+{
+  "word": "rabbit",
+  "ipa": "/ˈræb.ɪt/",
+  "syllables": ["rab", "bit"],
+  "phoneme_groups": ["ræb", "ɪt"],
+  "audio_files": {
+    "normal": "rabbit_normal.mp3",
+    "slow": "rabbit_slow.mp3",
+    "syllable_rab": "rabbit_syl_1.mp3",
+    "syllable_bit": "rabbit_syl_2.mp3",
+    "teaching": "rabbit_teaching.mp3"
+  },
+  "tts_prompts": [
+    "Say the word: rabbit.",
+    "Say it slowly: rab... bit.",
+    "Now say it with me: rab (pause) bit.",
+    "One more time! Rabbit!"
+  ]
+}
+```
+
+#### Teaching Mode UI Flow
+
+When player requests help with a word:
+
+1. **Show phonetic breakdown** visually on screen
+2. **Play full word** (normal speed)
+3. **Play syllable-by-syllable** (with pauses)
+4. **Interactive practice**: Tap each syllable to hear it again
+5. **Call-and-response**: "Your turn - say 'rab'"
+6. **Record & verify**: Player records, Whisper checks
+
+#### TTS Audio Generation (Pre-computed at Build Time)
+
+Generate pronunciation audio for all curriculum words during game build:
+
+```javascript
+// Pre-generation script (run once)
+for (const word of curriculumWords) {
+  // Normal pronunciation
+  await generateTTS({
+    model: "tts-1",
+    voice: "alloy", // Kid-friendly voice
+    input: `Say the word: ${word}.`,
+    output: `audio/words/${word}_normal.mp3`
+  });
+
+  // Slow pronunciation
+  await generateTTS({
+    model: "tts-1",
+    voice: "alloy",
+    input: `Say it slowly: ${syllables.join('... ')}.`,
+    output: `audio/words/${word}_slow.mp3`
+  });
+
+  // Teaching sequence
+  await generateTTS({
+    model: "tts-1",
+    voice: "alloy",
+    input: `Let's practice: ${word}. Say it with me: ${syllables.join(' (pause) ')}.`,
+    output: `audio/words/${word}_teaching.mp3`
+  });
+}
+```
+
+**Benefits**:
+- Zero latency during gameplay (audio pre-loaded)
+- Consistent pronunciation across all words
+- No per-use API costs
+- Offline playback capability
+
+#### Syllable Breakdown Generation
+
+Use GPT-4o-mini to automatically generate pronunciation data:
+
+```javascript
+// One-time generation per word
+const response = await gpt4oMini({
+  prompt: `Break down the word "${word}" for teaching a child to read.
+
+  Provide:
+  1. IPA notation
+  2. Syllable breakdown (American English)
+  3. Phoneme groups suitable for teaching
+  4. Simple pronunciation tips
+
+  Format as JSON.`,
+
+  response_format: { type: "json_object" }
+});
+```
+
+**Output Example**:
+```json
+{
+  "word": "elephant",
+  "ipa": "/ˈel.ɪ.fənt/",
+  "syllables": ["el", "e", "phant"],
+  "phoneme_groups": ["ɛl", "ɪ", "fənt"],
+  "pronunciation_tips": "Start with 'el' like 'L', then 'eh', then 'fant' like 'font'",
+  "common_mistakes": [
+    "Saying 'elefant' instead of 'elephant'",
+    "Dropping the 'ph' sound"
+  ]
+}
+```
+
+### API Integration Strategy
+
+#### Development Environment
+- Use `VITE_OPENAI_API_KEY` for rapid testing
+- All APIs called directly from client
+- **⚠️ NEVER commit this to production**
+
+#### Production Environment (Proxy Service Required)
+
+**Architecture**:
+```
+[Game Client]
+    ↓
+[Proxy Server]
+    ├─→ [Whisper API] (Primary recognition)
+    ├─→ [GPT-4o-mini] (Error analysis, pronunciation data generation)
+    └─→ [TTS API] (Build-time audio generation only)
+```
+
+**Proxy Responsibilities**:
+- Secure API key storage
+- Rate limiting (30 requests/min per user)
+- Usage tracking and cost monitoring
+- Session authentication
+- Request caching for repeated words
+
+### Migration Path from Current Implementation
+
+**Current State** (`StreamingSpeechService`):
+- Uses OpenAI Realtime API with gpt-4o-audio-preview
+- Client-side API key (development only)
+- ~800ms-1.5s latency due to full audio processing
+
+**Target State** (Whisper + GPT-4o-mini):
+1. **Immediate**: Replace OpenAI Realtime API with Whisper API
+   - Change endpoint from `/v1/realtime` to `/v1/audio/transcriptions`
+   - Reduce latency from 800ms → 100-300ms
+   - Keep existing continuous recording architecture
+
+2. **Phase 2**: Add pronunciation feedback
+   - On Whisper mismatch, call GPT-4o-mini with audio + target word
+   - Parse pronunciation error explanation
+   - Display feedback UI to player
+
+3. **Phase 3**: Add TTS teaching mode
+   - Pre-generate pronunciation audio for curriculum
+   - Build interactive syllable-by-syllable UI
+   - Integrate with existing word display system
+
+**Code Changes Required**:
+```typescript
+// OLD (current implementation)
+class StreamingSpeechService {
+  async recognize(audio: Blob): Promise<string> {
+    // Calls gpt-4o-audio-preview realtime API
+  }
+}
+
+// NEW (Whisper + fallback to GPT-4o-mini)
+class SpeechRecognitionService {
+  async recognizeWithWhisper(audio: Blob, targetWord: string): Promise<{
+    text: string;
+    isCorrect: boolean;
+    feedback?: string; // Only present if incorrect
+  }> {
+    // 1. Fast Whisper transcription
+    const transcription = await whisperAPI.transcribe(audio);
+
+    // 2. Check if correct
+    if (fuzzyMatch(transcription, targetWord)) {
+      return { text: transcription, isCorrect: true };
+    }
+
+    // 3. Get pronunciation feedback (only on error)
+    const feedback = await gpt4oMini.analyzePronunciation({
+      audio,
+      targetWord,
+      transcription
+    });
+
+    return {
+      text: transcription,
+      isCorrect: false,
+      feedback: feedback.explanation
+    };
+  }
+}
+```
+
 ## Security and Deployment Considerations
 
 ### Speech Recognition API Security (CRITICAL FOR PRODUCTION)
@@ -710,9 +960,11 @@ this.input.keyboard.on('keydown-SPACE', handler)
    - Prevent unfair deaths during reading time
 
 2. **Speech Recognition Integration** (Highest Priority)
-   - Whisper API for spell casting
-   - Real-time pronunciation feedback
-   - Microphone UI indicators
+   - **Phase 1**: Whisper API integration for fast word verification (100-300ms)
+   - **Phase 2**: GPT-4o-mini pronunciation analysis (error feedback only)
+   - **Phase 3**: Pre-generate TTS audio for all curriculum words
+   - **Phase 4**: Interactive pronunciation teaching mode
+   - Microphone UI indicators and visual feedback
 
 2. **Treasure System**
    - Word-lock mechanics for chests

@@ -36,7 +36,7 @@ export class HotBarUI extends Phaser.GameObjects.Container {
       // Slot background
       const background = this.scene.add.graphics()
       background.fillStyle(0x2a2a2a, 0.8) // Dark background
-      background.strokeStyle(0x555555, 2) // Gray border
+      background.lineStyle(2, 0x555555) // Gray border
       background.fillRoundedRect(-this.SLOT_SIZE/2, -this.SLOT_SIZE/2, this.SLOT_SIZE, this.SLOT_SIZE, 8)
       background.strokeRoundedRect(-this.SLOT_SIZE/2, -this.SLOT_SIZE/2, this.SLOT_SIZE, this.SLOT_SIZE, 8)
 
@@ -122,7 +122,7 @@ export class HotBarUI extends Phaser.GameObjects.Container {
         // Highlight background
         background.clear()
         background.fillStyle(0x3a3a3a, 0.9)
-        background.strokeStyle(0x00ff00, 2) // Green border for filled slots
+        background.lineStyle(2, 0x00ff00) // Green border for filled slots
         background.fillRoundedRect(-this.SLOT_SIZE/2, -this.SLOT_SIZE/2, this.SLOT_SIZE, this.SLOT_SIZE, 8)
         background.strokeRoundedRect(-this.SLOT_SIZE/2, -this.SLOT_SIZE/2, this.SLOT_SIZE, this.SLOT_SIZE, 8)
       } else {
@@ -137,7 +137,7 @@ export class HotBarUI extends Phaser.GameObjects.Container {
         // Default background
         background.clear()
         background.fillStyle(0x2a2a2a, 0.8)
-        background.strokeStyle(0x555555, 2)
+        background.lineStyle(2, 0x555555)
         background.fillRoundedRect(-this.SLOT_SIZE/2, -this.SLOT_SIZE/2, this.SLOT_SIZE, this.SLOT_SIZE, 8)
         background.strokeRoundedRect(-this.SLOT_SIZE/2, -this.SLOT_SIZE/2, this.SLOT_SIZE, this.SLOT_SIZE, 8)
       }
@@ -169,9 +169,29 @@ export class HotBarUI extends Phaser.GameObjects.Container {
         break
 
       case 'fairy':
-        // Star shape
+        // Star shape - draw manually
         graphics.fillStyle(0xffff44, 1)
-        graphics.fillStar(0, -5, 5, 8, 4)
+        const points = 5
+        const outerRadius = 8
+        const innerRadius = 4
+        const centerX = 0
+        const centerY = -5
+
+        graphics.beginPath()
+        for (let i = 0; i < points * 2; i++) {
+          const radius = i % 2 === 0 ? outerRadius : innerRadius
+          const angle = (Math.PI * i) / points - Math.PI / 2
+          const x = centerX + Math.cos(angle) * radius
+          const y = centerY + Math.sin(angle) * radius
+
+          if (i === 0) {
+            graphics.moveTo(x, y)
+          } else {
+            graphics.lineTo(x, y)
+          }
+        }
+        graphics.closePath()
+        graphics.fillPath()
         break
 
       default:

@@ -285,6 +285,7 @@ export class Enemy extends Phaser.GameObjects.Container {
   }
 
   private die(): void {
+    console.log(`☠️ Enemy.die() called for ${this.config.id}`)
     this.isAlive = false;
 
     // Stop any timers
@@ -305,11 +306,13 @@ export class Enemy extends Phaser.GameObjects.Container {
       duration: 500,
       ease: 'Power2.in',
       onComplete: () => {
+        console.log(`🗑️ Enemy sprite destroyed: ${this.config.id}`)
         this.destroy();
       }
     });
 
     // Emit death event
+    console.log(`📡 Emitting enemyDied event for ${this.config.id}`)
     this.scene.events.emit('enemyDied', {
       id: this.config.id,
       position: this.gridPosition,
