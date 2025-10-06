@@ -1,7 +1,7 @@
 {
   "bug": "CRITICAL: No boss room exists on floor 1",
   "severity": "HIGH",
-  "timestamp": "2025-10-06T05:05:28.139Z",
+  "timestamp": "2025-10-06T05:06:38.613Z",
   "dungeon": null,
   "screenshotPath": "tests/reports/screenshots/no-boss-room-bug.png",
   "designRequirement": "Boss-Gated Stairwell Progression requires a boss room on every floor",

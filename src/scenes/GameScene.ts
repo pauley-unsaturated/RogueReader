@@ -2280,4 +2280,37 @@ export class GameScene extends Phaser.Scene {
 
     console.log('GameScene shutdown - cleaned up input handlers and media resources')
   }
+
+  // Test API for Puppeteer E2E tests (dev mode only)
+  public getTestAPI() {
+    if (!import.meta.env.DEV) return null;
+
+    return {
+      player: this.player ? {
+        position: this.player.getGridPosition(),
+        health: this.player.health,
+        mana: this.player.mana
+      } : null,
+      dungeon: this.dungeon ? {
+        rooms: this.dungeon.rooms.map(r => ({
+          x: r.x, y: r.y, width: r.width, height: r.height,
+          type: r.type || 'normal'
+        })),
+        currentFloor: this.currentFloor
+      } : null,
+      combat: {
+        isActive: this.isInCombat,
+        enemyCount: this.enemies.length,
+        enemies: this.enemies.map(e => {
+          const entity = e.getCombatEntity();
+          return {
+            id: entity.id,
+            position: entity.gridPosition,
+            health: entity.stats.health,
+            maxHealth: entity.stats.maxHealth
+          };
+        })
+      }
+    };
+  }
 }
