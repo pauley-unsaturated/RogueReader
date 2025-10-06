@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Spell Speakers - Reading Roguelike</title>
     <style>
         body {
@@ -14,10 +14,23 @@
             align-items: center;
             min-height: 100vh;
             font-family: 'Courier New', monospace;
+            /* Prevent touch-based zooming */
+            touch-action: manipulation;
+            -webkit-text-size-adjust: 100%;
+            -webkit-tap-highlight-color: transparent;
         }
         #game-container {
             border: 2px solid #333;
             border-radius: 8px;
+            /* Prevent accidental zooming on game canvas */
+            touch-action: none;
+        }
+        /* Prevent double-tap zoom */
+        canvas {
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
     </style>
 </head>

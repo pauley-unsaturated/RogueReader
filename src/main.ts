@@ -19,9 +19,18 @@ const config: Phaser.Types.Core.GameConfig = {
   },
   pixelArt: true,
   scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH
-  }
+    mode: Phaser.Scale.NONE,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    // Prevent zoom/scale changes on mobile devices
+    zoom: 1
+  },
+  // Disable automatic canvas resizing
+  autoRound: true
 }
 
-new Phaser.Game(config)
+const game = new Phaser.Game(config)
+
+// Make game accessible for testing in development
+if (import.meta.env.DEV) {
+  (window as any).game = game
+}
