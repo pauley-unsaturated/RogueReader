@@ -109,11 +109,19 @@ export class GameTestHelpers {
       // MenuScene uses Phaser buttons, so we need to click on the canvas at the button position
       // For now, we'll use keyboard to start (SPACE or ENTER typically starts)
       await this.page.keyboard.press('Enter');
-      await this.page.waitForTimeout(1000);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Skip tutorial if it appears (press T to skip)
+      await this.page.keyboard.press('t');
+      await new Promise(resolve => setTimeout(resolve, 500));
     } catch (error) {
       console.log('Could not start game via button, trying keyboard...');
       await this.page.keyboard.press(' ');
-      await this.page.waitForTimeout(1000);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Skip tutorial if it appears
+      await this.page.keyboard.press('t');
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
 

@@ -19,7 +19,7 @@ export async function setupGamePage(browser: Browser): Promise<Page> {
   // Set viewport for consistent testing
   await page.setViewport({ width: 1280, height: 800 });
 
-  // Navigate to HTTPS dev server (updated from http://localhost:5173)
+  // Navigate to HTTPS dev server (port 3000)
   await page.goto('https://localhost:3000', {
     waitUntil: 'networkidle0'
   });

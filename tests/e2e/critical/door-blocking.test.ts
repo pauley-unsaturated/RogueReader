@@ -22,7 +22,7 @@ describe('Door Blocking System', () => {
 
   it('should have doors connecting rooms', async () => {
     await helpers.startGame();
-    await page.waitForTimeout(2000); // Let dungeon generate
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Let dungeon generate
 
     const gameState = await helpers.getGameState();
     const roomCount = gameState?.dungeon?.rooms?.length || 0;

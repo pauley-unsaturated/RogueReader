@@ -22,7 +22,7 @@ describe('Boss-Gated Progression', () => {
 
   it('should have a boss room on every level', async () => {
     await helpers.startGame();
-    await page.waitForTimeout(2000); // Let dungeon generate
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Let dungeon generate
 
     const gameState = await helpers.getGameState();
 

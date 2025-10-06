@@ -33,6 +33,14 @@
             user-select: none;
         }
     </style>
+    <script>
+        // Prevent arrow keys and space from scrolling/zooming the page
+        window.addEventListener('keydown', function(e) {
+            if(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', ' '].includes(e.key)) {
+                e.preventDefault();
+            }
+        }, false);
+    </script>
 </head>
 <body>
     <div id="game-container"></div>

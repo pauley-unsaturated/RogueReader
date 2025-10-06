@@ -1,0 +1,13 @@
+{
+  "bug": "CRITICAL: No boss room exists on floor 1",
+  "severity": "HIGH",
+  "timestamp": "2025-10-06T05:05:28.139Z",
+  "dungeon": null,
+  "screenshotPath": "tests/reports/screenshots/no-boss-room-bug.png",
+  "designRequirement": "Boss-Gated Stairwell Progression requires a boss room on every floor",
+  "suggestedFix": [
+    "Check DungeonGenerator.ts room generation logic",
+    "Ensure one room is marked with hasBoss=true or type=\"boss\"",
+    "Verify boss enemy spawns in the designated room"
+  ]
+}
