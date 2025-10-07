@@ -8,6 +8,7 @@ import { CombatUI } from '@/components/CombatUI'
 import { CastingDialog } from '@/components/CastingDialog'
 import { Enemy, EnemyConfig } from '@/entities/Enemy'
 import { Stairwell, StairwellConfig } from '@/entities/Stairwell'
+import { Door, DoorConfig } from '@/entities/Door'
 import { WordManager } from '@/systems/WordManager'
 import { SpeechRecognitionResult } from '@/services/SpeechRecognitionService'
 import { PronunciationHelpService } from '@/services/PronunciationHelpService'
@@ -28,6 +29,7 @@ export class GameScene extends Phaser.Scene {
   private combatUI!: CombatUI
   private castingDialog: CastingDialog | null = null
   private enemies: Enemy[] = []
+  private doors: Door[] = []
   private stairwell: Stairwell | null = null
   private wordManager!: WordManager
   private currencySystem!: CurrencySystem
@@ -46,6 +48,7 @@ export class GameScene extends Phaser.Scene {
   private recordingEndTimer: Phaser.Time.TimerEvent | null = null
   private isSpaceKeyDown: boolean = false // Track actual key state to prevent auto-repeat spam
   private escapeKeyPressed: boolean = false // Track ESC key state
+  private currentPlayerRoomIndex: number | null = null // Track which room player is currently in
 
   constructor() {
     super({ key: 'GameScene' })
@@ -139,6 +142,10 @@ export class GameScene extends Phaser.Scene {
     this.tiles.forEach(row => row.forEach(tile => tile.destroy()))
     this.tiles = []
 
+    // Clear existing doors
+    this.doors.forEach(door => door.destroy())
+    this.doors = []
+
     // Clear existing stairwell
     if (this.stairwell) {
       this.stairwell.destroy()
@@ -146,6 +153,20 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.dungeon = this.dungeonGenerator.generate(this.currentFloor)
+
+    // Create door entities
+    this.dungeon.doors.forEach(doorData => {
+      const config: DoorConfig = {
+        id: doorData.id,
+        gridX: doorData.gridX,
+        gridY: doorData.gridY,
+        orientation: doorData.orientation,
+        roomIndex: doorData.roomIndex
+      }
+      const door = new Door(this, config)
+      door.setDepth(5) // Above floor tiles (0) but below player (10)
+      this.doors.push(door)
+    })
     
     // Create visual tiles
     for (let y = 0; y < this.dungeon.height; y++) {
@@ -153,7 +174,7 @@ export class GameScene extends Phaser.Scene {
       for (let x = 0; x < this.dungeon.width; x++) {
         const tileType = this.dungeon.tiles[y][x]
         let color: number
-        
+
         switch (tileType) {
           case 0: // Floor
             color = GAME_CONFIG.COLORS.FLOOR
@@ -161,19 +182,19 @@ export class GameScene extends Phaser.Scene {
           case 1: // Wall
             color = GAME_CONFIG.COLORS.WALL
             break
-          case 2: // Door
-            color = GAME_CONFIG.COLORS.DOOR
+          case 2: // Door (now handled by Door entities, render as floor)
+            color = GAME_CONFIG.COLORS.FLOOR
             break
           default:
             color = GAME_CONFIG.COLORS.WALL
         }
-        
+
         const pixelX = x * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2
         const pixelY = y * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2
-        
+
         const tile = this.add.rectangle(pixelX, pixelY, GAME_CONFIG.TILE_SIZE, GAME_CONFIG.TILE_SIZE, color)
         tile.setStrokeStyle(1, 0x34495e, 0.3)
-        
+
         this.tiles[y][x] = tile
       }
     }
@@ -496,10 +517,21 @@ export class GameScene extends Phaser.Scene {
     if (x < 0 || x >= this.dungeon.width || y < 0 || y >= this.dungeon.height) {
       return false
     }
-    
+
     // Check for walls
     const tileType = this.dungeon.tiles[y][x]
-    return tileType === 0 || tileType === 2 // Floor or door
+    if (tileType !== 0 && tileType !== 2) {
+      return false // Wall or other blocking tile
+    }
+
+    // Check for closed doors
+    const blockedByDoor = this.doors.some(door => door.blocksPosition(x, y))
+    if (blockedByDoor) {
+      console.log(`🚪 Movement blocked by closed door at (${x}, ${y})`)
+      return false
+    }
+
+    return true
   }
 
   private useHotBarItem(slotIndex: number): void {
@@ -670,11 +702,11 @@ export class GameScene extends Phaser.Scene {
     this.combatSystem.on('combatStarted', () => {
       this.isInCombat = true
       this.showCombatPrompt()
+      // NOTE: Door locking now happens on room entry (in update loop), not here
     })
 
     this.combatSystem.on('combatEnded', (data: any) => {
       console.log('📢 combatEnded event received')
-      // Don't immediately set isInCombat to false - check for nearby enemies first
       this.hideCombatPrompt()
 
       // Restore some mana after combat
@@ -686,31 +718,38 @@ export class GameScene extends Phaser.Scene {
         this.showReward(data.bonusReward, 'Combo Bonus!')
       }
 
-      // Check if there are still enemies nearby
-      const nearbyEnemies = this.enemies.filter(enemy => {
-        const pos = enemy.getGridPosition()
-        const distance = Math.abs(pos.x - this.player.gridX) + Math.abs(pos.y - this.player.gridY)
-        const alive = enemy.isAliveStatus()
-        if (distance <= 5) {
-          console.log(`  Enemy at (${pos.x}, ${pos.y}): distance=${distance}, alive=${alive}`)
-        }
-        return distance <= 5 && alive
-      })
+      // Check if current room is truly cleared (room-based, not proximity-based)
+      const currentRoom = this.currentPlayerRoomIndex
 
-      console.log(`📊 Combat end check: ${nearbyEnemies.length} alive enemies within range`)
+      if (currentRoom !== null) {
+        const room = this.dungeon.rooms[currentRoom]
 
-      if (nearbyEnemies.length > 0) {
-        console.log(`⚔️ More enemies nearby (${nearbyEnemies.length}) - continuing combat`)
-        // Re-register enemies with combat system
-        nearbyEnemies.forEach(enemy => {
-          this.combatSystem.addEnemy(enemy.getCombatEntity())
-          enemy.startCombat(this.player.getGridPosition())
+        // Count alive enemies in THIS specific room
+        const roomEnemies = this.enemies.filter(enemy => {
+          if (!enemy.isAliveStatus()) return false
+          const pos = enemy.getGridPosition()
+          return pos.x >= room.x && pos.x < room.x + room.width &&
+                 pos.y >= room.y && pos.y < room.y + room.height
         })
-        // Keep isInCombat true
-        this.isInCombat = true
+
+        console.log(`📊 Room ${currentRoom} clear check: ${roomEnemies.length} alive enemies remain`)
+
+        if (roomEnemies.length > 0) {
+          console.log(`⚔️ More enemies in room ${currentRoom} (${roomEnemies.length}) - continuing combat`)
+          // Re-register room enemies with combat system
+          roomEnemies.forEach(enemy => {
+            this.combatSystem.addEnemy(enemy.getCombatEntity())
+            enemy.startCombat(this.player.getGridPosition())
+          })
+          this.isInCombat = true
+        } else {
+          console.log(`✅ Room ${currentRoom} cleared - unlocking doors`)
+          this.isInCombat = false
+          this.unlockRoomDoors(currentRoom)
+        }
       } else {
-        console.log('✅ No more enemies nearby - combat truly ended')
-        console.log(`  Setting isInCombat = false, isSpellCasting = ${this.isSpellCasting}`)
+        // Player is in corridor, just end combat
+        console.log('✅ Combat ended in corridor area')
         this.isInCombat = false
       }
     })
@@ -883,13 +922,56 @@ export class GameScene extends Phaser.Scene {
     })
   }
 
+  /**
+   * Get the room index at the given grid position
+   * Returns null if position is not inside any room (e.g., in corridor)
+   */
+  private getRoomAtPosition(gridX: number, gridY: number): number | null {
+    const roomIndex = this.dungeon.rooms.findIndex((room) => {
+      return gridX >= room.x && gridX < room.x + room.width &&
+             gridY >= room.y && gridY < room.y + room.height
+    })
+    return roomIndex === -1 ? null : roomIndex
+  }
+
+  /**
+   * Lock all doors belonging to the specified room
+   */
+  private lockRoomDoors(roomIndex: number): void {
+    let closedCount = 0
+    this.doors.forEach(door => {
+      if (door.roomIndex === roomIndex) {
+        door.close()
+        closedCount++
+      }
+    })
+    console.log(`🔒 Locked ${closedCount} door(s) for room ${roomIndex}`)
+  }
+
+  /**
+   * Unlock all doors belonging to the specified room
+   */
+  private unlockRoomDoors(roomIndex: number): void {
+    let openedCount = 0
+    this.doors.forEach(door => {
+      if (door.roomIndex === roomIndex) {
+        door.open()
+        openedCount++
+      }
+    })
+    console.log(`🔓 Unlocked ${openedCount} door(s) for room ${roomIndex}`)
+  }
+
   private spawnEnemies(): void {
     // Clear existing enemies
     this.enemies.forEach(enemy => enemy.destroy())
     this.enemies = []
 
-    // Spawn enemies in combat rooms
+    // Spawn enemies in combat rooms (skip room 0 - safe starting room)
     this.dungeon.rooms.forEach((room, index) => {
+      // Never spawn enemies in the first room (player start position)
+      if (index === 0) return
+
       if (room.type === 'combat') {
         // Spawn 1-3 enemies per combat room
         const enemyCount = Phaser.Math.Between(1, 3)
@@ -2159,10 +2241,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private lastPlayerPosition: { x: number; y: number } = { x: -1, y: -1 }
+  private lastManaRegenTime: number = 0
 
-  update(_time: number, _delta: number): void {
+  update(time: number, _delta: number): void {
     // Don't update if game is over or paused
     if (this.isGameOver || this.isGamePaused) return
+
+    // Passive MP regeneration (1 MP per second)
+    const MANA_REGEN_INTERVAL = 1000 // 1 second
+    const MANA_REGEN_AMOUNT = 1 // 1 MP per second
+
+    if (time - this.lastManaRegenTime >= MANA_REGEN_INTERVAL) {
+      if (this.player.mana < this.player.maxMana) {
+        this.player.restoreMana(MANA_REGEN_AMOUNT)
+      }
+      this.lastManaRegenTime = time
+    }
 
     // Safety check: Clear stuck spell casting flag if no dialog exists
     if (this.isSpellCasting && !this.castingDialog && !this.isInCombat) {
@@ -2195,6 +2289,39 @@ export class GameScene extends Phaser.Scene {
     if (!playerMoved) return
 
     this.lastPlayerPosition = { x: this.player.gridX, y: this.player.gridY }
+
+    // Check for room transitions (for door locking mechanics)
+    const newRoomIndex = this.getRoomAtPosition(this.player.gridX, this.player.gridY)
+
+    if (newRoomIndex !== this.currentPlayerRoomIndex) {
+      // Player has moved to a different room (or entered/exited corridor)
+      const oldRoomIndex = this.currentPlayerRoomIndex
+      this.currentPlayerRoomIndex = newRoomIndex
+
+      console.log(`🚶 Room transition: ${oldRoomIndex === null ? 'corridor' : `room ${oldRoomIndex}`} → ${newRoomIndex === null ? 'corridor' : `room ${newRoomIndex}`}`)
+
+      // If entering a combat or boss room, check if it has enemies and lock doors
+      if (newRoomIndex !== null) {
+        const room = this.dungeon.rooms[newRoomIndex]
+
+        if (room.type === 'combat' || room.type === 'boss') {
+          // Count alive enemies in this specific room
+          const roomEnemies = this.enemies.filter(enemy => {
+            if (!enemy.isAliveStatus()) return false
+            const pos = enemy.getGridPosition()
+            return pos.x >= room.x && pos.x < room.x + room.width &&
+                   pos.y >= room.y && pos.y < room.y + room.height
+          })
+
+          if (roomEnemies.length > 0) {
+            console.log(`🔒 Entered ${room.type} room ${newRoomIndex} with ${roomEnemies.length} enemies - LOCKING DOORS`)
+            this.lockRoomDoors(newRoomIndex)
+          } else {
+            console.log(`✅ Entered ${room.type} room ${newRoomIndex} but it's already cleared`)
+          }
+        }
+      }
+    }
 
     // Check for combat proximity
     const COMBAT_RANGE = 5

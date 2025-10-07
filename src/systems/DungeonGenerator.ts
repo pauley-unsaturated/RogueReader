@@ -7,7 +7,15 @@ export interface Room {
   height: number
   centerX: number
   centerY: number
-  type: 'combat' | 'treasure' | 'puzzle' | 'shop' | 'boss'
+  type: 'entrance' | 'combat' | 'treasure' | 'puzzle' | 'shop' | 'boss'
+}
+
+export interface DoorData {
+  id: string
+  gridX: number
+  gridY: number
+  orientation: 'horizontal' | 'vertical'
+  roomIndex: number // Which room this door belongs to (only combat/boss rooms have doors)
 }
 
 export interface Dungeon {
@@ -18,6 +26,7 @@ export interface Dungeon {
   playerStart: { x: number, y: number }
   bossRoom: Room | null
   stairwellPosition: { x: number, y: number } | null
+  doors: DoorData[]
 }
 
 export class DungeonGenerator {
@@ -52,10 +61,10 @@ export class DungeonGenerator {
     // Carve out rooms
     rooms.forEach(room => this.carveRoom(tiles, room))
 
-    // Connect rooms with corridors
-    this.connectRooms(tiles, rooms)
+    // Connect rooms with corridors and generate door data
+    const doors = this.connectRooms(tiles, rooms)
 
-    // Add doors
+    // Add door tiles (visual markers in tile grid)
     this.addDoors(tiles, rooms)
 
     // Determine stairwell position (in boss room)
@@ -68,7 +77,8 @@ export class DungeonGenerator {
       tiles,
       playerStart: { x: rooms[0].centerX, y: rooms[0].centerY },
       bossRoom,
-      stairwellPosition
+      stairwellPosition,
+      doors
     }
   }
 
@@ -113,7 +123,9 @@ export class DungeonGenerator {
   }
 
   private getRoomType(roomIndex: number, _totalRooms: number, _floor: number): Room['type'] {
-    if (roomIndex === 0) return 'combat' // Start room
+    // First room is always safe entrance (no enemies, no doors)
+    if (roomIndex === 0) return 'entrance'
+
     // Boss room will be assigned later via distance-based algorithm
 
     const rand = Math.random()
@@ -147,15 +159,19 @@ export class DungeonGenerator {
       distance: Math.abs(room.centerX - playerRoom.centerX) + Math.abs(room.centerY - playerRoom.centerY)
     }))
 
-    // Sort by: 1) Non-combat rooms first (to preserve combat rooms), 2) Distance (farthest first)
+    // Sort by distance (farthest first) - distance is the PRIMARY concern
+    // Then by room type (prefer non-combat to preserve combat encounters)
     roomDistances.sort((a, b) => {
-      // Prioritize non-combat rooms for boss conversion
+      // Primary sort: Distance (farthest first)
+      const distanceDiff = b.distance - a.distance
+      if (Math.abs(distanceDiff) > 1) { // If distance differs significantly, use that
+        return distanceDiff
+      }
+
+      // Secondary sort (for rooms at similar distance): Prefer non-combat for boss conversion
       const aIsCombat = a.room.type === 'combat' ? 1 : 0
       const bIsCombat = b.room.type === 'combat' ? 1 : 0
-      if (aIsCombat !== bIsCombat) return aIsCombat - bIsCombat
-
-      // Then sort by distance (farthest first)
-      return b.distance - a.distance
+      return aIsCombat - bIsCombat
     })
 
     // Apply 90% probability decay algorithm
@@ -206,13 +222,100 @@ export class DungeonGenerator {
     }
   }
 
-  private connectRooms(tiles: number[][], rooms: Room[]): void {
+  private connectRooms(tiles: number[][], rooms: Room[]): DoorData[] {
+    // First, carve corridors between rooms
     for (let i = 1; i < rooms.length; i++) {
       const roomA = rooms[i - 1]
       const roomB = rooms[i]
-      
       this.carveCorridor(tiles, roomA.centerX, roomA.centerY, roomB.centerX, roomB.centerY)
     }
+
+    // Now find all entrances to combat/boss rooms and place doors
+    const doors: DoorData[] = []
+    let doorIdCounter = 0
+
+    rooms.forEach((room, roomIndex) => {
+      // Only place doors for combat and boss rooms
+      if (room.type !== 'combat' && room.type !== 'boss') {
+        return
+      }
+
+      // Find all floor tiles on the perimeter of this room that connect to corridors
+      const entrances = this.findRoomEntrances(tiles, room)
+
+      entrances.forEach(entrance => {
+        doors.push({
+          id: `door_${roomIndex}_${doorIdCounter++}`,
+          gridX: entrance.x,
+          gridY: entrance.y,
+          orientation: entrance.orientation,
+          roomIndex: roomIndex
+        })
+      })
+    })
+
+    console.log(`🚪 Generated ${doors.length} doors for combat/boss rooms`)
+    return doors
+  }
+
+  private findRoomEntrances(tiles: number[][], room: Room): Array<{ x: number, y: number, orientation: 'horizontal' | 'vertical' }> {
+    const entrances: Array<{ x: number, y: number, orientation: 'horizontal' | 'vertical' }> = []
+
+    // Check top edge
+    for (let x = room.x; x < room.x + room.width; x++) {
+      const y = room.y
+      if (this.isEntrance(tiles, x, y, 0, -1)) {
+        entrances.push({ x, y, orientation: 'horizontal' })
+      }
+    }
+
+    // Check bottom edge
+    for (let x = room.x; x < room.x + room.width; x++) {
+      const y = room.y + room.height - 1
+      if (this.isEntrance(tiles, x, y, 0, 1)) {
+        entrances.push({ x, y, orientation: 'horizontal' })
+      }
+    }
+
+    // Check left edge
+    for (let y = room.y; y < room.y + room.height; y++) {
+      const x = room.x
+      if (this.isEntrance(tiles, x, y, -1, 0)) {
+        entrances.push({ x, y, orientation: 'vertical' })
+      }
+    }
+
+    // Check right edge
+    for (let y = room.y; y < room.y + room.height; y++) {
+      const x = room.x + room.width - 1
+      if (this.isEntrance(tiles, x, y, 1, 0)) {
+        entrances.push({ x, y, orientation: 'vertical' })
+      }
+    }
+
+    return entrances
+  }
+
+  private isEntrance(tiles: number[][], x: number, y: number, dx: number, dy: number): boolean {
+    // Check if this tile is floor and the adjacent tile (outside room) is also floor (corridor)
+    if (y < 0 || y >= tiles.length || x < 0 || x >= tiles[0].length) {
+      return false
+    }
+
+    const currentTile = tiles[y][x]
+    if (currentTile !== this.TILE_FLOOR) {
+      return false
+    }
+
+    const adjY = y + dy
+    const adjX = x + dx
+
+    if (adjY < 0 || adjY >= tiles.length || adjX < 0 || adjX >= tiles[0].length) {
+      return false
+    }
+
+    const adjacentTile = tiles[adjY][adjX]
+    return adjacentTile === this.TILE_FLOOR
   }
 
   private carveCorridor(tiles: number[][], x1: number, y1: number, x2: number, y2: number): void {

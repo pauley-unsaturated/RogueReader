@@ -91,3 +91,4 @@ No automated testing framework currently. Manual testing for:
 - `src/config/GameConfig.ts`: Game constants and configuration
 - `src/systems/DungeonGenerator.ts`: Procedural generation logic
 - `src/systems/WordManager.ts`: Reading content and progression
+- Whenever a fix is made that appears to be more of a design decision or a minor rules adjustment, ALWAYS make sure to update the DESIGN.md

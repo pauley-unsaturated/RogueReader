@@ -129,8 +129,24 @@ Every mechanic reinforces reading practice while maintaining compelling roguelik
 ### Selected System: Boss-Gated Stairwell Progression
 
 **Core Mechanics:**
+- **Entrance Room (Room 0)**: The first room is always type "entrance"
+  - NEVER contains enemies - provides safe zone for orientation
+  - NO doors - player can freely enter and exit
+  - Cannot be converted to boss room
+  - Always the player spawn point
 - **Boss Guarantee**: Every dungeon level ALWAYS has at least one boss enemy
 - **Boss Placement**: Probability decay from farthest to nearest rooms
+- **Combat Room Doors**: Every entrance/exit to combat and boss rooms has a door
+  - Doors are VISIBLE (solid brown) when closed
+  - Doors are INVISIBLE (alpha: 0) when open
+  - Doors start OPEN to allow exploration
+- **Combat Room Lock-In**: When player enters a combat/boss room with enemies:
+  - ALL doors to that room instantly CLOSE and become visible (Binding of Isaac style)
+  - Player cannot leave until all enemies are defeated
+  - Doors block movement when closed
+- **Door Unlocking**: When all enemies in current room reach zero:
+  - ALL doors to that room instantly OPEN and become invisible
+  - Player can freely exit to continue exploring
 - **Stairwell Activation**: Stairwells only appear after defeating the floor's boss
 - **Visual Feedback**: Stairwell materializes with shimmery appearing animation upon boss death
 - **Progression Lock**: Cannot advance to next floor without defeating current floor's boss
@@ -333,12 +349,18 @@ Advanced SAT-style mechanics will be implemented once core systems are proven an
   - 15 MP = 5 seconds (minimum)
 - Cannot cast if MP < 15
 
+**MP Regeneration**:
+- **Passive Regeneration**: 1 MP per second (always active)
+- **Combat Bonus**: +25% of max MP after combat ends
+- **Prevents Deadlock**: Player can never be stuck with 0 MP
+- **Encourages Patience**: Waiting a bit restores casting ability
+
 **Strategic Decisions**:
 - Players must balance number of spell attempts vs saving MP
 - Word complexity affects damage, not MP cost
 - Failed attempts still consume MP (risk/reward)
-- MP regenerates after combat (+25% of max)
-- Treasure rooms may contain MP potions
+- Can wait for MP to regenerate if running low
+- Treasure rooms may contain MP potions for instant restoration
 
 **Design Benefits**:
 - Single resource system across all grades
@@ -1110,7 +1132,7 @@ Automated testing enables longer AI-assisted development sessions by catching re
 
 **2. Design Compliance Tests (Priority 2)**
 - Room generation constraints (min/max sizes, count scaling)
-- Enemy spawn rules (combat room placement, boss distance from spawn)
+- Enemy spawn rules (safe starting room, combat room placement, boss distance from spawn)
 - Currency/reward calculations
 - Mana consumption and restoration
 
