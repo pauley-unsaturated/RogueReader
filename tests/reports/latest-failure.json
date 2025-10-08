@@ -1,13 +1,18 @@
 {
-  "bug": "CRITICAL: No boss room exists on floor 1",
+  "bug": "CRITICAL: Combat room has no doors",
   "severity": "HIGH",
-  "timestamp": "2025-10-06T05:06:38.613Z",
-  "dungeon": null,
-  "screenshotPath": "tests/reports/screenshots/no-boss-room-bug.png",
-  "designRequirement": "Boss-Gated Stairwell Progression requires a boss room on every floor",
-  "suggestedFix": [
-    "Check DungeonGenerator.ts room generation logic",
-    "Ensure one room is marked with hasBoss=true or type=\"boss\"",
-    "Verify boss enemy spawns in the designated room"
-  ]
+  "timestamp": "2025-10-07T04:36:36.339Z",
+  "screenshotPath": "tests/reports/screenshots/no-doors-on-combat-room.png",
+  "details": {
+    "roomType": "boss",
+    "roomBounds": {
+      "x": 16,
+      "y": 11,
+      "width": 5,
+      "height": 6,
+      "type": "boss"
+    },
+    "expectedDoors": "At least 1",
+    "actualDoors": 0
+  }
 }

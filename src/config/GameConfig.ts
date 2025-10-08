@@ -1,5 +1,5 @@
 export const GAME_CONFIG = {
-  TILE_SIZE: 32,
+  TILE_SIZE: 48, // Increased from 32 for better visibility on small screens
   GRID_WIDTH: 32,
   GRID_HEIGHT: 24,
   

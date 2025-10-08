@@ -18,27 +18,59 @@ export class UIScene extends Phaser.Scene {
 
   private createHUD(): void {
     const { width, height } = this.cameras.main
-    
-    // Health bar (floats above spell dialogs)
-    const healthBarBg = this.add.rectangle(100, height - 50, 200, 20, 0x7f8c8d)
+
+    // HP on LEFT side - big, easy to read for kids
+    const hpX = 120
+    const hpY = height - 40
+
+    // Health bar background
+    const healthBarBg = this.add.rectangle(hpX, hpY, 180, 24, 0x7f8c8d)
     healthBarBg.setDepth(1100)
-    this.healthBar = this.add.rectangle(100, height - 50, 200, 20, 0xe74c3c)
+    // Health bar foreground
+    this.healthBar = this.add.rectangle(hpX, hpY, 180, 24, 0xe74c3c)
     this.healthBar.setDepth(1100)
-    this.healthText = this.add.text(20, height - 60, 'HP: 100/100', {
-      fontSize: '14px',
-      color: '#ffffff'
+    // HP label (small)
+    this.add.text(30, hpY - 12, 'HP', {
+      fontSize: '16px',
+      color: '#ffffff',
+      fontStyle: 'bold'
+    }).setDepth(1100)
+    // HP value (BIG number)
+    this.healthText = this.add.text(hpX, hpY, '100', {
+      fontSize: '28px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 3
     })
+    this.healthText.setOrigin(0.5)
     this.healthText.setDepth(1100)
 
-    // Mana bar (floats above spell dialogs)
-    const manaBarBg = this.add.rectangle(100, height - 25, 200, 20, 0x7f8c8d)
+    // MP on RIGHT side - big, easy to read for kids
+    const mpX = width - 120
+    const mpY = height - 40
+
+    // Mana bar background
+    const manaBarBg = this.add.rectangle(mpX, mpY, 180, 24, 0x7f8c8d)
     manaBarBg.setDepth(1100)
-    this.manaBar = this.add.rectangle(100, height - 25, 200, 20, 0x3498db)
+    // Mana bar foreground
+    this.manaBar = this.add.rectangle(mpX, mpY, 180, 24, 0x3498db)
     this.manaBar.setDepth(1100)
-    this.manaText = this.add.text(20, height - 35, 'MP: 50/50', {
-      fontSize: '14px',
-      color: '#ffffff'
+    // MP label (small)
+    this.add.text(width - 210, mpY - 12, 'MP', {
+      fontSize: '16px',
+      color: '#ffffff',
+      fontStyle: 'bold'
+    }).setDepth(1100)
+    // MP value (BIG number)
+    this.manaText = this.add.text(mpX, mpY, '50', {
+      fontSize: '28px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 3
     })
+    this.manaText.setOrigin(0.5)
     this.manaText.setDepth(1100)
 
     // Instructions
@@ -113,12 +145,14 @@ export class UIScene extends Phaser.Scene {
   private updateHealthBar(current: number, max: number): void {
     const percentage = current / max
     this.healthBar.setScale(percentage, 1)
-    this.healthText.setText(`HP: ${current}/${max}`)
+    // Show just the current value, BIG and readable
+    this.healthText.setText(`${Math.round(current)}`)
   }
 
   private updateManaBar(current: number, max: number): void {
     const percentage = current / max
     this.manaBar.setScale(percentage, 1)
-    this.manaText.setText(`MP: ${current}/${max}`)
+    // Show just the current value, BIG and readable
+    this.manaText.setText(`${Math.round(current)}`)
   }
 }

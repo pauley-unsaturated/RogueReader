@@ -13,6 +13,9 @@ export class WordManager {
   private wordsByLevel: Map<number, string[]> = new Map()
   private playerWordHistory: Map<string, WordData> = new Map()
   private loadPromises: Map<number, Promise<string[]>> = new Map()
+  // Track words used in current session to prevent repeats
+  private currentSessionUsedWords: Set<string> = new Set()
+  private currentSessionWordPool: string[] = []
 
   constructor() {
     this.initializeFallbackWords()
@@ -103,63 +106,76 @@ export class WordManager {
     return fallbacks[level] || fallbacks[1]
   }
 
+  /**
+   * Reset session word pool - call this when starting new combat or floor
+   * to ensure fresh word selection without repeats
+   */
+  public resetSessionWordPool(playerLevel: number): void {
+    this.currentSessionUsedWords.clear()
+    const level = Math.min(playerLevel, 20)
+    const levelWords = this.wordsByLevel.get(level) || this.getFallbackWords(level)
+
+    // Create shuffled pool of all available words for this level
+    this.currentSessionWordPool = this.shuffleArray([...levelWords])
+    console.log(`📚 Reset word pool with ${this.currentSessionWordPool.length} words for level ${level}`)
+  }
+
+  /**
+   * Fisher-Yates shuffle for unbiased randomization
+   */
+  private shuffleArray<T>(array: T[]): T[] {
+    const shuffled = [...array]
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+    }
+    return shuffled
+  }
+
+  /**
+   * Mark word as used in current session
+   */
+  public markWordAsUsed(word: string): void {
+    this.currentSessionUsedWords.add(word)
+  }
+
   // Get appropriate words based on player's reading level and spaced repetition
   public async getWordsForSpell(playerLevel: number, _spellType: 'attack' | 'defense' | 'unlock' | 'heal', count: number = 1): Promise<string[]> {
     const level = Math.min(playerLevel, 20)
     await this.loadWordsForLevel(level)
 
-    const levelWords = this.wordsByLevel.get(level) || []
-    const reviewWords = this.getWordsNeedingReview(level)
-    const newWords = this.getNewWords(level, levelWords)
+    // Ensure session pool is initialized
+    if (this.currentSessionWordPool.length === 0) {
+      this.resetSessionWordPool(playerLevel)
+    }
 
-    // Mix of review and new words (70% review, 30% new for retention)
     const selectedWords: string[] = []
-    const reviewCount = Math.floor(count * 0.7)
-    const newCount = count - reviewCount
 
-    // Add review words
-    for (let i = 0; i < reviewCount && i < reviewWords.length; i++) {
-      selectedWords.push(reviewWords[i])
-    }
+    // Sample without replacement from the session pool
+    let attempts = 0
+    const maxAttempts = this.currentSessionWordPool.length * 2 // Safety limit
 
-    // Add new words
-    for (let i = 0; i < newCount && i < newWords.length; i++) {
-      selectedWords.push(newWords[i])
-    }
+    while (selectedWords.length < count && attempts < maxAttempts) {
+      attempts++
 
-    // Fill remaining slots if needed
-    while (selectedWords.length < count && levelWords.length > 0) {
-      const randomWord = levelWords[Math.floor(Math.random() * levelWords.length)]
-      if (!selectedWords.includes(randomWord)) {
-        selectedWords.push(randomWord)
+      // If we've exhausted the pool, refill it
+      if (this.currentSessionWordPool.length === 0) {
+        console.log('🔄 Word pool exhausted, refilling with shuffled words')
+        this.resetSessionWordPool(playerLevel)
+      }
+
+      // Take word from pool
+      const word = this.currentSessionWordPool.pop()!
+
+      // Only add if not already used in this session
+      if (!this.currentSessionUsedWords.has(word) && !selectedWords.includes(word)) {
+        selectedWords.push(word)
+        this.currentSessionUsedWords.add(word)
       }
     }
 
+    console.log(`🎯 Selected ${selectedWords.length} unique words: ${selectedWords.join(', ')}`)
     return selectedWords.slice(0, count)
-  }
-
-  private getWordsNeedingReview(level: number): string[] {
-    const now = new Date()
-    const reviewWords: string[] = []
-
-    for (const [word, data] of this.playerWordHistory) {
-      if (data.level === level && data.nextReview <= now) {
-        reviewWords.push(word)
-      }
-    }
-
-    // Sort by most urgent review first
-    reviewWords.sort((a, b) => {
-      const dataA = this.playerWordHistory.get(a)!
-      const dataB = this.playerWordHistory.get(b)!
-      return dataA.nextReview.getTime() - dataB.nextReview.getTime()
-    })
-
-    return reviewWords
-  }
-
-  private getNewWords(_level: number, levelWords: string[]): string[] {
-    return levelWords.filter(word => !this.playerWordHistory.has(word))
   }
 
   // Record player's performance for spaced repetition algorithm

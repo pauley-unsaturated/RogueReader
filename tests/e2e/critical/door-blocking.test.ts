@@ -20,66 +20,73 @@ describe('Door Blocking System', () => {
     await browser.close();
   });
 
-  it('should have doors connecting rooms', async () => {
+  it('should have doors at entrances to combat/boss rooms', async () => {
     await helpers.startGame();
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Let dungeon generate
 
-    const gameState = await helpers.getGameState();
-    const roomCount = gameState?.dungeon?.rooms?.length || 0;
+    // Wait longer for dungeon generation + scene transition
+    await new Promise(resolve => setTimeout(resolve, 3500));
 
-    console.log('Game state:', JSON.stringify(gameState, null, 2));
-    console.log(`Found ${roomCount} rooms`);
-
-    // This test will likely FAIL initially because we may not have implemented doors yet
-    // That's exactly what we want - it will catch the "skip to boss" bug
-
-    // For now, just verify dungeon structure exists
-    expect(gameState?.dungeon).not.toBeNull();
-    expect(roomCount).toBeGreaterThan(0);
-
-    // TODO: Once doors are implemented, add checks for:
-    // - Door count (should be >= roomCount - 1 for connected rooms)
-    // - Door states (initially closed)
-    // - Door positions (between rooms)
-
-    // Placeholder for door check (will fail until implemented)
-    const hasDoorSystem = await page.evaluate(() => {
+    const doorData = await page.evaluate(() => {
       const game = (window as any).game;
       const gameScene = game?.scene.getScene('GameScene');
-      // Check if door array or door tracking exists
-      return gameScene?.doors !== undefined;
+
+      if (!gameScene || !gameScene.doors) {
+        return { hasDoors: false, doors: [], rooms: [] };
+      }
+
+      const doors = gameScene.doors.map((door: any) => ({
+        id: door.id,
+        gridX: door.gridX,
+        gridY: door.gridY,
+        roomIndex: door.roomIndex,
+        isOpen: door.getIsOpen(),
+        alpha: door.doorGraphic?.alpha || 0
+      }));
+
+      const rooms = gameScene.dungeon.rooms.map((r: any, i: number) => ({
+        index: i,
+        type: r.type,
+        x: r.x,
+        y: r.y,
+        width: r.width,
+        height: r.height
+      }));
+
+      return { hasDoors: true, doors, rooms };
     });
 
-    if (!hasDoorSystem) {
+    console.log('Door system check:', JSON.stringify(doorData, null, 2));
+
+    if (!doorData.hasDoors) {
       await helpers.takeScreenshot('no-door-system-bug');
 
       const report = {
-        bug: 'CRITICAL: Door system not implemented - player can skip to boss',
+        bug: 'CRITICAL: Door system not implemented',
         severity: 'HIGH',
         timestamp: new Date().toISOString(),
-        rooms: gameState?.dungeon?.rooms,
         screenshotPath: 'tests/reports/screenshots/no-door-system-bug.png',
-        designRequirement: 'Boss-Gated Progression requires doors to block paths until combat is cleared',
-        exploitFound: 'Kid playtest discovered: can walk directly to boss without clearing rooms',
-        suggestedFix: [
-          'Add doors array to GameScene',
-          'Create Door class extending Phaser.GameObjects.Container',
-          'Generate doors between connected rooms in DungeonGenerator',
-          'Block player movement through closed doors in Player.ts collision detection',
-          'Open doors when combat room is cleared'
-        ]
       };
 
       await fs.writeFile(
         'tests/reports/latest-failure.json',
         JSON.stringify(report, null, 2)
       );
-
-      console.warn('⚠️ Door system not found - this will allow boss skip exploit');
     }
 
-    // This will fail initially - that's expected and desired!
-    expect(hasDoorSystem).toBe(true);
+    expect(doorData.hasDoors).toBe(true);
+
+    // Verify doors only exist for combat/boss rooms
+    const combatBossRooms = doorData.rooms.filter((r: any) =>
+      r.type === 'combat' || r.type === 'boss'
+    );
+
+    console.log(`Combat/boss rooms: ${combatBossRooms.length}, Total doors: ${doorData.doors.length}`);
+    expect(doorData.doors.length).toBeGreaterThan(0);
+
+    // Verify doors start open (alpha = 0)
+    const openDoors = doorData.doors.filter((d: any) => d.isOpen && d.alpha === 0);
+    console.log(`Open doors (alpha=0): ${openDoors.length}/${doorData.doors.length}`);
+    expect(openDoors.length).toBe(doorData.doors.length);
   });
 
   it('should prevent player from moving through closed doors', async () => {

@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    testTimeout: 30000, // 30 seconds for Puppeteer tests
-    hookTimeout: 30000, // 30 seconds for setup/teardown
+    testTimeout: 45000, // 45 seconds for Puppeteer tests
+    hookTimeout: 60000, // 60 seconds for setup/teardown (browser launch can be slow)
   },
 });

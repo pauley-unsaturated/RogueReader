@@ -25,7 +25,23 @@ const config: Phaser.Types.Core.GameConfig = {
     zoom: 1
   },
   // Disable automatic canvas resizing
-  autoRound: true
+  autoRound: true,
+  // Capture keyboard events to prevent browser default behavior (scrolling, etc.)
+  input: {
+    keyboard: {
+      capture: [
+        Phaser.Input.Keyboard.KeyCodes.UP,
+        Phaser.Input.Keyboard.KeyCodes.DOWN,
+        Phaser.Input.Keyboard.KeyCodes.LEFT,
+        Phaser.Input.Keyboard.KeyCodes.RIGHT,
+        Phaser.Input.Keyboard.KeyCodes.SPACE,
+        Phaser.Input.Keyboard.KeyCodes.W,
+        Phaser.Input.Keyboard.KeyCodes.A,
+        Phaser.Input.Keyboard.KeyCodes.S,
+        Phaser.Input.Keyboard.KeyCodes.D
+      ]
+    }
+  }
 }
 
 const game = new Phaser.Game(config)

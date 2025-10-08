@@ -206,6 +206,7 @@ export class GameScene extends Phaser.Scene {
       
       let roomColor: number
       switch (room.type) {
+        case 'entrance': roomColor = 0x3498db; break // Blue for entrance
         case 'combat': roomColor = 0xe74c3c; break
         case 'treasure': roomColor = 0xf1c40f; break
         case 'puzzle': roomColor = 0x9b59b6; break
@@ -260,8 +261,11 @@ export class GameScene extends Phaser.Scene {
 
   private setupCamera(): void {
     this.cameras.main.startFollow(this.player)
-    this.cameras.main.setZoom(1.5)
-    
+    // Zoom set to show ~10x10 tiles on screen
+    // With 48px tiles: 1024px / 48px = 21 tiles at 1x zoom
+    // 21 tiles / 10 desired tiles = 2.1x zoom
+    this.cameras.main.setZoom(2.1)
+
     // Set world bounds
     this.cameras.main.setBounds(
       0, 0,
@@ -701,6 +705,8 @@ export class GameScene extends Phaser.Scene {
     // Listen for combat events
     this.combatSystem.on('combatStarted', () => {
       this.isInCombat = true
+      // Reset word pool to prevent repeats within this combat session
+      this.wordManager.resetSessionWordPool(this.currentFloor)
       this.showCombatPrompt()
       // NOTE: Door locking now happens on room entry (in update loop), not here
     })

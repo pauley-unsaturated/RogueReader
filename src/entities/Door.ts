@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { GAME_CONFIG } from '@/config/GameConfig'
 
 export interface DoorConfig {
   id: string
@@ -17,10 +18,10 @@ export class Door extends Phaser.GameObjects.Container {
   private isOpen: boolean = true // Start doors open
   private doorGraphic: Phaser.GameObjects.Rectangle
   private doorFrame: Phaser.GameObjects.Rectangle
-  private readonly TILE_SIZE = 32
+  private readonly TILE_SIZE = GAME_CONFIG.TILE_SIZE
 
   constructor(scene: Phaser.Scene, config: DoorConfig) {
-    super(scene, config.gridX * 32, config.gridY * 32)
+    super(scene, config.gridX * GAME_CONFIG.TILE_SIZE, config.gridY * GAME_CONFIG.TILE_SIZE)
 
     this.id = config.id
     this.gridX = config.gridX
