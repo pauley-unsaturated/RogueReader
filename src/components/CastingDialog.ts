@@ -6,6 +6,7 @@ export interface CastingDialogOptions {
   duration?: number; // Optional - only used for timer mode
   maxTries?: number; // Optional - only used for tries mode
   useTriesMode?: boolean; // If true, use tries instead of timer
+  maxSpells?: number; // Maximum number of spells in combo (default 2, can grow with runes)
   onTimerEnd: (results: SpeechRecognitionResult[]) => void;
   onClose?: () => void;
 }
@@ -24,6 +25,7 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   private recordingBar!: Phaser.GameObjects.Graphics;
   private castButton!: Phaser.GameObjects.Container;
   private castButtonText!: Phaser.GameObjects.Text;
+  private spellSlotsContainer!: Phaser.GameObjects.Container;
 
   private options: CastingDialogOptions;
   private comboWords: string[] = [];
@@ -34,10 +36,12 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   private recordingStartTime: number = 0;
   private currentTries: number = 0;
   private triesDisplay?: Phaser.GameObjects.Text;
+  private maxSpells: number; // Maximum spells in combo (grows with runes)
 
   constructor(scene: Phaser.Scene, options: CastingDialogOptions) {
     super(scene, scene.cameras.main.width / 2, scene.cameras.main.height / 2);
     this.options = options;
+    this.maxSpells = options.maxSpells || 2; // Default to 2 spells, can grow with runes
 
     this.createDialog();
     scene.add.existing(this);
@@ -57,9 +61,12 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     );
     this.add(this.background);
 
-    // Main dialog panel
-    const panelWidth = 500;
-    const panelHeight = 400;
+    // Main dialog panel - responsive to viewport scaling
+    // With 2.1x zoom, visible area is ~487x366, so panel must fit within that
+    const maxPanelWidth = Math.min(400, this.scene.cameras.main.width * 0.85);
+    const maxPanelHeight = Math.min(350, this.scene.cameras.main.height * 0.75);
+    const panelWidth = maxPanelWidth;
+    const panelHeight = maxPanelHeight;
 
     this.panel = this.scene.add.graphics();
     this.panel.fillStyle(0x1a1a2e, 0.95);
@@ -81,8 +88,10 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     this.add(this.panel);
 
     // Spell name (smaller, secondary importance)
-    this.spellNameText = this.scene.add.text(0, -160, this.options.spellName.toUpperCase(), {
-      fontSize: '24px',
+    // Adjust vertical positions for smaller panel
+    const topY = -panelHeight / 2 + 40;
+    this.spellNameText = this.scene.add.text(0, topY, this.options.spellName.toUpperCase(), {
+      fontSize: '20px',  // Reduced from 24px
       color: '#00bfff',
       fontFamily: 'Arial',
       stroke: '#000000',
@@ -91,9 +100,14 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     this.spellNameText.setOrigin(0.5);
     this.add(this.spellNameText);
 
+    // Spell Slots Visual Display (shows max spells and current count)
+    this.spellSlotsContainer = this.scene.add.container(0, topY + 30);
+    this.createSpellSlots();
+    this.add(this.spellSlotsContainer);
+
     // Current word to speak (large and prominent)
-    this.currentWordText = this.scene.add.text(0, -60, '', {
-      fontSize: '48px',
+    this.currentWordText = this.scene.add.text(0, topY + 80, '', {
+      fontSize: '40px',  // Reduced from 48px to fit smaller panel
       color: '#ffffff',
       fontFamily: 'Arial Black',
       stroke: '#000000',
@@ -137,14 +151,15 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     this.instructionText.setAlpha(0.8);
     this.add(this.instructionText);
 
-    // Timer bar at bottom (only for timer mode)
+    // Timer bar at bottom (only for timer mode) - positioned relative to panel height
+    const timerBarY = panelHeight / 2 - 50;
     this.timerBar = this.scene.add.graphics();
-    this.timerBar.y = 180;
+    this.timerBar.y = timerBarY;
     this.add(this.timerBar);
 
-    // Tries display (only for tries mode)
+    // Tries display (only for tries mode) - positioned relative to panel height
     if (this.options.useTriesMode) {
-      this.triesDisplay = this.scene.add.text(0, 180, '', {
+      this.triesDisplay = this.scene.add.text(0, timerBarY, '', {
         fontSize: '24px',
         color: '#ffffff',
         fontFamily: 'Arial',
@@ -155,8 +170,8 @@ export class CastingDialog extends Phaser.GameObjects.Container {
       this.add(this.triesDisplay);
     }
 
-    // Cast Spell button
-    this.createCastButton();
+    // Cast Spell button - positioned relative to panel dimensions
+    this.createCastButton(panelWidth, panelHeight);
 
     // Animate in
     this.setScale(0);
@@ -179,6 +194,9 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     this.comboResults = [];
     this.isRecording = false;
 
+    // Reset spell slots visual
+    this.updateSpellSlots();
+
     if (this.options.useTriesMode) {
       // Initialize tries mode
       this.currentTries = 0;
@@ -194,12 +212,74 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     this.setRecordingState('ready');
 
     // Update instruction
-    this.instructionText.setText('Hold SPACE to record • ENTER to cast spell');
+    const slotsText = this.maxSpells === 2 ? '2 spells max' : `${this.maxSpells} spells max`;
+    this.instructionText.setText(`Hold SPACE to record • ${slotsText}`);
   }
 
-  private createCastButton(): void {
-    // Create button container
-    this.castButton = this.scene.add.container(200, 180);
+  private createSpellSlots(): void {
+    // Clear existing slots
+    this.spellSlotsContainer.removeAll(true);
+
+    // Create visual spell slot icons (like hearts in Zelda)
+    const slotSize = 24;
+    const slotSpacing = 8;
+    const totalWidth = (slotSize * this.maxSpells) + (slotSpacing * (this.maxSpells - 1));
+    const startX = -totalWidth / 2;
+
+    for (let i = 0; i < this.maxSpells; i++) {
+      const x = startX + (i * (slotSize + slotSpacing));
+
+      // Empty slot (background)
+      const emptySlot = this.scene.add.graphics();
+      emptySlot.lineStyle(2, 0x666666);
+      emptySlot.strokeCircle(x + slotSize/2, 0, slotSize/2);
+      emptySlot.setName(`slot_empty_${i}`);
+      this.spellSlotsContainer.add(emptySlot);
+
+      // Filled slot (hidden initially, shown when word added)
+      const filledSlot = this.scene.add.graphics();
+      filledSlot.fillStyle(0x4CAF50); // Green for filled
+      filledSlot.fillCircle(x + slotSize/2, 0, slotSize/2);
+      filledSlot.lineStyle(2, 0x45a049);
+      filledSlot.strokeCircle(x + slotSize/2, 0, slotSize/2);
+      filledSlot.setName(`slot_filled_${i}`);
+      filledSlot.setAlpha(0); // Hidden initially
+      this.spellSlotsContainer.add(filledSlot);
+    }
+  }
+
+  private updateSpellSlots(): void {
+    const currentCount = this.comboWords.length;
+
+    // Update slot visuals to show filled/empty
+    for (let i = 0; i < this.maxSpells; i++) {
+      const filledSlot = this.spellSlotsContainer.getByName(`slot_filled_${i}`) as Phaser.GameObjects.Graphics;
+      if (filledSlot) {
+        // Show filled slot if we have a word for this index
+        if (i < currentCount) {
+          filledSlot.setAlpha(1);
+          // Add pulse animation for newly filled slot
+          if (i === currentCount - 1) {
+            this.scene.tweens.add({
+              targets: filledSlot,
+              scaleX: { from: 1.5, to: 1 },
+              scaleY: { from: 1.5, to: 1 },
+              duration: 200,
+              ease: 'Back.out'
+            });
+          }
+        } else {
+          filledSlot.setAlpha(0);
+        }
+      }
+    }
+  }
+
+  private createCastButton(panelWidth: number, panelHeight: number): void {
+    // Create button container - positioned at bottom-right of panel with padding
+    const buttonX = panelWidth / 2 - 80; // Right side with padding
+    const buttonY = panelHeight / 2 - 40; // Bottom with padding
+    this.castButton = this.scene.add.container(buttonX, buttonY);
 
     // Button background
     const buttonBg = this.scene.add.graphics();
@@ -295,7 +375,8 @@ export class CastingDialog extends Phaser.GameObjects.Container {
       return;
     }
 
-    const barWidth = 400;
+    // Responsive bar width - 90% of camera width, max 350px
+    const barWidth = Math.min(350, this.scene.cameras.main.width * 0.9);
     const barHeight = 12;
 
     // Draw initial full bar
@@ -364,7 +445,8 @@ export class CastingDialog extends Phaser.GameObjects.Container {
       console.log('⏸️ Timer paused');
       // Update visual to show paused state
       const progress = this.timerTween.getValue() || 0;
-      this.updateTimerBar(progress, 400, 12);
+      const barWidth = Math.min(350, this.scene.cameras.main.width * 0.9);
+      this.updateTimerBar(progress, barWidth, 12);
     }
   }
 
@@ -377,7 +459,8 @@ export class CastingDialog extends Phaser.GameObjects.Container {
       console.log('▶️ Timer resumed');
       // Update visual to show active state
       const progress = this.timerTween.getValue() || 0;
-      this.updateTimerBar(progress, 400, 12);
+      const barWidth = Math.min(350, this.scene.cameras.main.width * 0.9);
+      this.updateTimerBar(progress, barWidth, 12);
     }
   }
 
@@ -528,8 +611,26 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     // Update combo display
     this.updateComboDisplay();
 
+    // Update spell slots visual
+    this.updateSpellSlots();
+
     // Update cast button to show combo count
     this.updateCastButtonVisibility();
+
+    // AUTO-FIRE: If we've reached max spells, cast immediately
+    if (this.comboWords.length >= this.maxSpells) {
+      this.instructionText.setText(`Spell Full! Casting x${this.comboWords.length}...`);
+
+      // Brief delay for visual feedback, then auto-cast
+      this.scene.time.delayedCall(500, () => {
+        if (this.isActive) {
+          console.log(`🎯 Auto-casting spell at max capacity (${this.maxSpells} words)`);
+          this.options.onTimerEnd(this.comboResults);
+          this.close();
+        }
+      });
+      return; // Don't show next word
+    }
 
     // Get next word
     const nextWord = this.getNextWord();
@@ -547,11 +648,12 @@ export class CastingDialog extends Phaser.GameObjects.Container {
         ease: 'Back.out'
       });
 
-      // Update instruction
+      // Update instruction based on slots remaining
+      const slotsRemaining = this.maxSpells - this.comboWords.length;
       if (this.comboWords.length === 1) {
-        this.instructionText.setText('Great! SPACE for next • ENTER to cast');
+        this.instructionText.setText(`Great! ${slotsRemaining} slot${slotsRemaining > 1 ? 's' : ''} left • ENTER to cast early`);
       } else {
-        this.instructionText.setText(`Combo x${this.comboWords.length}! SPACE to continue • ENTER to cast`);
+        this.instructionText.setText(`Combo x${this.comboWords.length}! ${slotsRemaining} slot${slotsRemaining > 1 ? 's' : ''} left • ENTER to cast`);
       }
     }
   }

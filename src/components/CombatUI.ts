@@ -28,7 +28,7 @@ export class CombatUI extends Phaser.GameObjects.Container {
   }
 
   private createUI(): void {
-    // Create combo display
+    // Create combo display (HIDDEN - now handled by CastingDialog spell slots)
     this.comboText = this.scene.add.text(0, 0, 'COMBO: 0x', {
       fontSize: '24px',
       color: '#ffff00',
@@ -36,12 +36,14 @@ export class CombatUI extends Phaser.GameObjects.Container {
       stroke: '#000000',
       strokeThickness: 4
     });
+    this.comboText.setAlpha(0); // Hidden - obsolete UI
     this.add(this.comboText);
 
-    // Create combo multiplier meter
+    // Create combo multiplier meter (HIDDEN - this was the "green bar bug")
     this.comboMeter = this.scene.add.graphics();
     this.comboMeter.x = 0;
     this.comboMeter.y = 35;
+    this.comboMeter.setAlpha(0); // Hidden - obsolete UI, caused green bar at top
     this.add(this.comboMeter);
 
     // Create damage display
@@ -77,13 +79,14 @@ export class CombatUI extends Phaser.GameObjects.Container {
     this.wordComplexityIndicator.setOrigin(0.5);
     this.add(this.wordComplexityIndicator);
 
-    // Create health bar
+    // Create health bar (HIDDEN - now handled by UIScene)
     this.healthBar = this.scene.add.graphics();
     this.healthBar.x = -100;
     this.healthBar.y = -50;
+    this.healthBar.setAlpha(0); // Hidden - obsolete UI
     this.add(this.healthBar);
 
-    // Create health text
+    // Create health text (HIDDEN - now handled by UIScene)
     this.healthText = this.scene.add.text(0, -50, '', {
       fontSize: '18px',
       color: '#ffffff',
@@ -92,6 +95,7 @@ export class CombatUI extends Phaser.GameObjects.Container {
       strokeThickness: 2
     });
     this.healthText.setOrigin(0.5);
+    this.healthText.setAlpha(0); // Hidden - obsolete UI
     this.add(this.healthText);
 
     // Create current casting word display (hidden - now handled by dialog)

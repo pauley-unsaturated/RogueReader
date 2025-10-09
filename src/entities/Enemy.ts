@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import { CombatEntity } from '../systems/CombatSystem';
+import { GAME_CONFIG } from '@/config/GameConfig';
 
 export interface EnemyConfig {
   id: string;
@@ -30,8 +31,8 @@ export class Enemy extends Phaser.GameObjects.Container {
   private moveTimer?: Phaser.Time.TimerEvent;
 
   constructor(scene: Phaser.Scene, config: EnemyConfig) {
-    const worldX = config.gridPosition.x * 32 + 16;
-    const worldY = config.gridPosition.y * 32 + 16;
+    const worldX = config.gridPosition.x * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2;
+    const worldY = config.gridPosition.y * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2;
     super(scene, worldX, worldY);
 
     this.config = config;
@@ -427,8 +428,8 @@ export class Enemy extends Phaser.GameObjects.Container {
     this.gridPosition.x = gridX;
     this.gridPosition.y = gridY;
 
-    const worldX = gridX * 32 + 16;
-    const worldY = gridY * 32 + 16;
+    const worldX = gridX * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2;
+    const worldY = gridY * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2;
 
     this.scene.tweens.add({
       targets: this,

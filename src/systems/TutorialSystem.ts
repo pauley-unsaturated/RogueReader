@@ -32,38 +32,32 @@ export class TutorialSystem {
     return [
       {
         title: "Welcome to RogueReader!",
-        text: "You are a young wizard learning to read magical spells.\n\nRead words aloud to cast spells and defeat enemies!",
-        speakText: "Welcome to Rogue Reader! You are a young wizard learning to read magical spells. Read words aloud to cast spells and defeat enemies!",
+        text: "You are a young wizard learning magical reading spells!\n\nLet's learn how to play!",
+        speakText: "Welcome to Rogue Reader! You are a young wizard learning magical reading spells! Let's learn how to play!",
         pauseGame: true
       },
       {
-        title: "Movement",
-        text: "Use ARROW KEYS to move around the dungeon.\n\nExplore rooms to find enemies, treasure, and secrets!",
-        speakText: "Use the arrow keys to move around the dungeon. Explore rooms to find enemies, treasure, and secrets!",
+        title: "Moving Around",
+        text: "Use the ARROW KEYS ↑ ↓ ← → to walk.\n\nExplore rooms to find treasure and enemies!",
+        speakText: "Moving Around. Use the arrow keys to walk. Explore rooms to find treasure and enemies!",
         pauseGame: true
       },
       {
-        title: "Combat",
-        text: "When enemies are near, you'll see words appear.\n\nRead each word to cast a spell and damage enemies!",
-        speakText: "When enemies are near, you'll see words appear. Read each word to cast a spell and damage enemies!",
+        title: "Casting Spells",
+        text: "When you see a word, HOLD SPACEBAR and read it out loud!\n\nRelease SPACEBAR when done.\n\nThe computer will hear you!",
+        speakText: "Casting Spells. When you see a word, hold spacebar and read it out loud! Release spacebar when done. The computer will hear you!",
         pauseGame: true
       },
       {
-        title: "Combo System",
-        text: "Read words quickly to build COMBOS!\n\nHigher combos = More damage!\n\n1x → 1.5x → 2x → 2.5x → 3x",
-        speakText: "Read words quickly to build combos! Higher combos mean more damage! Chain your spells from one times to three times damage!",
-        pauseGame: true
-      },
-      {
-        title: "Word Difficulty",
-        text: "Harder words deal MORE damage!\n\nSimple: cat (1x)\nMedium: rabbit (1.5x)\nComplex: butterfly (2.5x)",
-        speakText: "Harder words deal more damage! Simple words like cat do normal damage. Medium words like rabbit do extra damage. Complex words like butterfly do massive damage!",
+        title: "Spell Limit",
+        text: "You can read 2 words before the spell fires.\n\n⭕ ⭕ = 2 spell slots\n\nWhen both are full, your spell casts automatically!",
+        speakText: "Spell Limit. You can read 2 words before the spell fires. When both spell slots are full, your spell casts automatically!",
         pauseGame: true
       },
       {
         title: "Your Goal",
-        text: "Defeat enemies, collect treasure, and reach the boss!\n\nEach floor gets harder but teaches new words.\n\nGood luck, young wizard!",
-        speakText: "Your goal is to defeat enemies, collect treasure, and reach the boss! Each floor gets harder but teaches new words. Good luck, young wizard!",
+        text: "Defeat enemies and find the boss room!\n\nEach floor has new words to learn.\n\nYou've got this, wizard!",
+        speakText: "Your Goal. Defeat enemies and find the boss room! Each floor has new words to learn. You've got this, wizard!",
         pauseGame: true
       }
     ];
@@ -81,7 +75,7 @@ export class TutorialSystem {
     // Create container for tutorial UI
     this.createTutorialDialog(step);
 
-    // Speak the text
+    // Speak the text (including title for clarity)
     if (this.speechSynthesis && step.speakText) {
       this.speak(step.speakText);
     }
@@ -152,13 +146,67 @@ export class TutorialSystem {
     mainText.setOrigin(0.5);
     this.container.add(mainText);
 
-    // Add instructions
-    const instructions = this.scene.add.text(0, dialogHeight/2 - 40,
-      this.currentStep < this.steps.length - 1 ?
-        'Press ENTER to continue • Press SPACE to skip tutorial' :
-        'Press ENTER to start playing • Press SPACE to skip',
+    // Add "Next" button (large and kid-friendly)
+    const buttonY = dialogHeight/2 - 60;
+    const isLastStep = this.currentStep >= this.steps.length - 1;
+
+    // Button background
+    const buttonBg = this.scene.add.graphics();
+    buttonBg.fillStyle(isLastStep ? 0x27ae60 : 0x3498db, 1); // Green for last step, blue otherwise
+    buttonBg.fillRoundedRect(-100, buttonY - 25, 200, 50, 10);
+    buttonBg.lineStyle(3, 0xffffff, 0.5);
+    buttonBg.strokeRoundedRect(-100, buttonY - 25, 200, 50, 10);
+    this.container.add(buttonBg);
+
+    // Button text
+    const buttonText = this.scene.add.text(0, buttonY,
+      isLastStep ? "Start Playing!" : "Next →",
       {
-        fontSize: '16px',
+        fontSize: '24px',
+        color: '#ffffff',
+        fontFamily: 'Arial Black',
+        align: 'center'
+      }
+    );
+    buttonText.setOrigin(0.5);
+    this.container.add(buttonText);
+
+    // Make button interactive
+    buttonBg.setInteractive(new Phaser.Geom.Rectangle(-100, buttonY - 25, 200, 50), Phaser.Geom.Rectangle.Contains);
+
+    buttonBg.on('pointerover', () => {
+      buttonBg.clear();
+      buttonBg.fillStyle(isLastStep ? 0x2ecc71 : 0x5dade2, 1); // Brighter on hover
+      buttonBg.fillRoundedRect(-100, buttonY - 25, 200, 50, 10);
+      buttonBg.lineStyle(3, 0xffffff, 0.8);
+      buttonBg.strokeRoundedRect(-100, buttonY - 25, 200, 50, 10);
+      this.scene.input.setDefaultCursor('pointer');
+    });
+
+    buttonBg.on('pointerout', () => {
+      buttonBg.clear();
+      buttonBg.fillStyle(isLastStep ? 0x27ae60 : 0x3498db, 1);
+      buttonBg.fillRoundedRect(-100, buttonY - 25, 200, 50, 10);
+      buttonBg.lineStyle(3, 0xffffff, 0.5);
+      buttonBg.strokeRoundedRect(-100, buttonY - 25, 200, 50, 10);
+      this.scene.input.setDefaultCursor('default');
+    });
+
+    buttonBg.on('pointerdown', () => {
+      this.nextStep();
+    });
+
+    // Also make backdrop clickable to advance
+    backdrop.setInteractive(new Phaser.Geom.Rectangle(-width/2, -height/2, width, height), Phaser.Geom.Rectangle.Contains);
+    backdrop.on('pointerdown', () => {
+      this.nextStep();
+    });
+
+    // Add instructions (smaller, less prominent)
+    const instructions = this.scene.add.text(0, dialogHeight/2 - 15,
+      'Click anywhere or press ENTER to continue',
+      {
+        fontSize: '14px',
         color: '#95a5a6',
         fontFamily: 'Arial',
         align: 'center'
@@ -179,12 +227,12 @@ export class TutorialSystem {
     stepCounter.setOrigin(1, 0);
     this.container.add(stepCounter);
 
-    // Pulse animation for title
+    // Pulse animation for button
     this.scene.tweens.add({
-      targets: title,
+      targets: buttonText,
       scaleX: 1.1,
       scaleY: 1.1,
-      duration: 1000,
+      duration: 800,
       yoyo: true,
       repeat: -1,
       ease: 'Sine.easeInOut'

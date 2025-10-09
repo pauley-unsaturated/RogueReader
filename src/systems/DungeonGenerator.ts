@@ -46,40 +46,88 @@ export class DungeonGenerator {
     const dungeonWidth = 30 + Math.floor(floor * 2)
     const dungeonHeight = 24 + Math.floor(floor * 1.5)
 
-    const tiles = this.createEmptyDungeon(dungeonWidth, dungeonHeight)
-    const rooms = this.generateRooms(dungeonWidth, dungeonHeight, numRooms, floor)
+    // Regenerate dungeon until all rooms are reachable (max 10 attempts)
+    const MAX_GENERATION_ATTEMPTS = 10
+    let generationAttempt = 0
+    let dungeon: Dungeon | null = null
 
-    // Debug: Log room types before boss assignment
-    console.log('🏠 Room types before boss assignment:', rooms.map((r, i) => `${i}:${r.type}`).join(', '))
+    while (generationAttempt < MAX_GENERATION_ATTEMPTS && !dungeon) {
+      generationAttempt++
 
-    // Apply distance-based boss placement
-    const bossRoom = this.assignBossRoom(rooms)
+      const tiles = this.createEmptyDungeon(dungeonWidth, dungeonHeight)
+      const rooms = this.generateRooms(dungeonWidth, dungeonHeight, numRooms, floor)
 
-    // Debug: Log room types after boss assignment
-    console.log('🏠 Room types after boss assignment:', rooms.map((r, i) => `${i}:${r.type}`).join(', '))
+      // Debug: Log room types before boss assignment
+      console.log('🏠 Room types before boss assignment:', rooms.map((r, i) => `${i}:${r.type}`).join(', '))
 
-    // Carve out rooms
-    rooms.forEach(room => this.carveRoom(tiles, room))
+      // Apply distance-based boss placement
+      const bossRoom = this.assignBossRoom(rooms)
 
-    // Connect rooms with corridors and generate door data
-    const doors = this.connectRooms(tiles, rooms)
+      // Debug: Log room types after boss assignment
+      console.log('🏠 Room types after boss assignment:', rooms.map((r, i) => `${i}:${r.type}`).join(', '))
 
-    // Add door tiles (visual markers in tile grid)
-    this.addDoors(tiles, rooms)
+      // Carve out rooms
+      rooms.forEach(room => this.carveRoom(tiles, room))
 
-    // Determine stairwell position (in boss room)
-    const stairwellPosition = bossRoom ? { x: bossRoom.centerX, y: bossRoom.centerY } : null
+      // Connect rooms with corridors and generate door data
+      const doors = this.connectRooms(tiles, rooms)
 
-    return {
-      width: dungeonWidth,
-      height: dungeonHeight,
-      rooms,
-      tiles,
-      playerStart: { x: rooms[0].centerX, y: rooms[0].centerY },
-      bossRoom,
-      stairwellPosition,
-      doors
+      // Add door tiles (visual markers in tile grid)
+      this.addDoors(tiles, rooms)
+
+      // Add 3-tile thick boundary walls (prevents edge visibility issues)
+      this.addBoundaryWalls(tiles)
+
+      // Validate that all rooms are reachable from entrance
+      const reachableRooms = this.validateRoomReachability(tiles, rooms)
+
+      if (reachableRooms.size === rooms.length) {
+        // All rooms reachable! Success!
+        console.log(`✅ Dungeon generation successful on attempt ${generationAttempt}: All ${rooms.length} rooms reachable`)
+
+        // Determine stairwell position (in boss room)
+        const stairwellPosition = bossRoom ? { x: bossRoom.centerX, y: bossRoom.centerY } : null
+
+        dungeon = {
+          width: dungeonWidth,
+          height: dungeonHeight,
+          rooms,
+          tiles,
+          playerStart: { x: rooms[0].centerX, y: rooms[0].centerY },
+          bossRoom,
+          stairwellPosition,
+          doors
+        }
+      } else {
+        console.warn(`⚠️ Attempt ${generationAttempt}: Only ${reachableRooms.size}/${rooms.length} rooms reachable - regenerating...`)
+      }
     }
+
+    // If we exhausted attempts, use the last generated dungeon anyway (safety fallback)
+    if (!dungeon) {
+      console.error('❌ Failed to generate fully connected dungeon after 10 attempts - using last attempt')
+      const tiles = this.createEmptyDungeon(dungeonWidth, dungeonHeight)
+      const rooms = this.generateRooms(dungeonWidth, dungeonHeight, numRooms, floor)
+      const bossRoom = this.assignBossRoom(rooms)
+      rooms.forEach(room => this.carveRoom(tiles, room))
+      const doors = this.connectRooms(tiles, rooms)
+      this.addDoors(tiles, rooms)
+      this.addBoundaryWalls(tiles)
+      const stairwellPosition = bossRoom ? { x: bossRoom.centerX, y: bossRoom.centerY } : null
+
+      dungeon = {
+        width: dungeonWidth,
+        height: dungeonHeight,
+        rooms,
+        tiles,
+        playerStart: { x: rooms[0].centerX, y: rooms[0].centerY },
+        bossRoom,
+        stairwellPosition,
+        doors
+      }
+    }
+
+    return dungeon
   }
 
   private createEmptyDungeon(width: number, height: number): number[][] {
@@ -90,6 +138,7 @@ export class DungeonGenerator {
     const rooms: Room[] = []
     const { MIN_ROOM_SIZE, MAX_ROOM_SIZE } = GAME_CONFIG.ROOM_CONFIG
     const maxAttempts = 100
+    const BOUNDARY_THICKNESS = 3 // Keep rooms away from boundary walls
 
     for (let i = 0; i < numRooms; i++) {
       let attempts = 0
@@ -98,8 +147,9 @@ export class DungeonGenerator {
       while (attempts < maxAttempts && !room) {
         const width = MIN_ROOM_SIZE + Math.floor(Math.random() * (MAX_ROOM_SIZE - MIN_ROOM_SIZE))
         const height = MIN_ROOM_SIZE + Math.floor(Math.random() * (MAX_ROOM_SIZE - MIN_ROOM_SIZE))
-        const x = 1 + Math.floor(Math.random() * (dungeonWidth - width - 1))
-        const y = 1 + Math.floor(Math.random() * (dungeonHeight - height - 1))
+        // Ensure rooms stay within safe zone (away from 3-tile boundary)
+        const x = BOUNDARY_THICKNESS + Math.floor(Math.random() * (dungeonWidth - width - BOUNDARY_THICKNESS * 2))
+        const y = BOUNDARY_THICKNESS + Math.floor(Math.random() * (dungeonHeight - height - BOUNDARY_THICKNESS * 2))
 
         const newRoom: Room = {
           x, y, width, height,
@@ -369,5 +419,107 @@ export class DungeonGenerator {
         tiles[doorY][doorX] = this.TILE_DOOR
       }
     })
+  }
+
+  /**
+   * Adds 3-tile thick boundary walls around the entire map edge.
+   * Prevents players from seeing the dungeon edge and ensures professional appearance.
+   */
+  private addBoundaryWalls(tiles: number[][]): void {
+    const height = tiles.length
+    const width = tiles[0].length
+    const BOUNDARY_THICKNESS = 3
+
+    // Fill top 3 rows
+    for (let y = 0; y < BOUNDARY_THICKNESS && y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        tiles[y][x] = this.TILE_WALL
+      }
+    }
+
+    // Fill bottom 3 rows
+    for (let y = Math.max(0, height - BOUNDARY_THICKNESS); y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        tiles[y][x] = this.TILE_WALL
+      }
+    }
+
+    // Fill left 3 columns
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < BOUNDARY_THICKNESS && x < width; x++) {
+        tiles[y][x] = this.TILE_WALL
+      }
+    }
+
+    // Fill right 3 columns
+    for (let y = 0; y < height; y++) {
+      for (let x = Math.max(0, width - BOUNDARY_THICKNESS); x < width; x++) {
+        tiles[y][x] = this.TILE_WALL
+      }
+    }
+  }
+
+  /**
+   * Validates that all rooms are reachable from entrance using BFS flood-fill
+   * @returns Set of room indices that are reachable from entrance (room 0)
+   */
+  private validateRoomReachability(tiles: number[][], rooms: Room[]): Set<number> {
+    if (rooms.length === 0) return new Set()
+
+    const entrance = rooms[0]
+    const reachableRooms = new Set<number>()
+    const visited = new Set<string>()
+    const queue: Array<{x: number, y: number}> = []
+
+    // Start BFS from entrance room center
+    const startKey = `${entrance.centerX},${entrance.centerY}`
+    queue.push({ x: entrance.centerX, y: entrance.centerY })
+    visited.add(startKey)
+
+    // BFS through all walkable tiles
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      const { x, y } = current
+
+      // Check which room this position belongs to
+      rooms.forEach((room, index) => {
+        if (x >= room.x && x < room.x + room.width &&
+            y >= room.y && y < room.y + room.height) {
+          reachableRooms.add(index)
+        }
+      })
+
+      // Explore neighbors (4-directional)
+      const neighbors = [
+        { x: x + 1, y },
+        { x: x - 1, y },
+        { x, y: y + 1 },
+        { x, y: y - 1 }
+      ]
+
+      for (const neighbor of neighbors) {
+        const key = `${neighbor.x},${neighbor.y}`
+
+        // Skip if already visited
+        if (visited.has(key)) continue
+
+        // Skip if out of bounds
+        if (neighbor.y < 0 || neighbor.y >= tiles.length ||
+            neighbor.x < 0 || neighbor.x >= tiles[0].length) {
+          continue
+        }
+
+        // Skip if wall (only walk on floor or door tiles)
+        const tile = tiles[neighbor.y][neighbor.x]
+        if (tile !== this.TILE_FLOOR && tile !== this.TILE_DOOR) {
+          continue
+        }
+
+        visited.add(key)
+        queue.push(neighbor)
+      }
+    }
+
+    return reachableRooms
   }
 }

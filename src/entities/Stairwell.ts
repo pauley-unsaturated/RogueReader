@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { GAME_CONFIG } from '@/config/GameConfig';
 
 export interface StairwellConfig {
   gridPosition: { x: number; y: number };
@@ -14,8 +15,8 @@ export class Stairwell extends Phaser.GameObjects.Container {
   private isActive: boolean = false;
 
   constructor(scene: Phaser.Scene, config: StairwellConfig) {
-    const worldX = config.gridPosition.x * 32 + 16;
-    const worldY = config.gridPosition.y * 32 + 16;
+    const worldX = config.gridPosition.x * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2;
+    const worldY = config.gridPosition.y * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2;
     super(scene, worldX, worldY);
 
     this.config = config;

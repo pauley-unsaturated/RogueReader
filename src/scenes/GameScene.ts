@@ -2155,35 +2155,52 @@ export class GameScene extends Phaser.Scene {
     this.tweens.killAll()
 
     // Clear any existing game over UI
-    const existingGameOver = this.children.getByName('gameOverText')
-    const existingRestart = this.children.getByName('restartText')
+    const existingGameOver = this.children.getByName('gameOverOverlay')
     if (existingGameOver) existingGameOver.destroy()
-    if (existingRestart) existingRestart.destroy()
 
-    const gameOverText = this.add.text(400, 300, 'GAME OVER', {
-      fontSize: '48px',
-      color: '#ff0000',
+    // Get camera dimensions for full-screen overlay
+    const { width, height } = this.cameras.main
+
+    // Create full-screen dark overlay (Dark Souls style)
+    const overlay = this.add.rectangle(
+      width / 2,
+      height / 2,
+      width,
+      height,
+      0x000000,
+      0.85  // 85% opacity for dramatic effect
+    )
+    overlay.setScrollFactor(0)
+    overlay.setDepth(2000)  // Above everything
+    overlay.setName('gameOverOverlay')
+
+    // "GAME OVER" text (dramatic but kid-friendly)
+    const gameOverText = this.add.text(width / 2, height / 2 - 60, 'GAME OVER', {
+      fontSize: '64px',
+      color: '#e74c3c',  // Bright red (less intimidating than dark red)
+      fontStyle: 'bold',
       stroke: '#000000',
-      strokeThickness: 4
+      strokeThickness: 6
     })
     gameOverText.setOrigin(0.5)
     gameOverText.setScrollFactor(0)
-    gameOverText.setDepth(200)
-    gameOverText.setName('gameOverText')
+    gameOverText.setDepth(2001)
 
-    const restartText = this.add.text(400, 350, 'Press R to restart • Click to restart', {
-      fontSize: '24px',
+    // Return to Menu button
+    const menuButton = this.add.text(width / 2, height / 2 + 40, 'Return to Menu', {
+      fontSize: '32px',
       color: '#ffffff',
+      fontStyle: 'bold',
       stroke: '#000000',
-      strokeThickness: 2
+      strokeThickness: 3,
+      backgroundColor: '#2c3e50',
+      padding: { x: 20, y: 10 }
     })
-    restartText.setOrigin(0.5)
-    restartText.setScrollFactor(0)
-    restartText.setDepth(200)
-    restartText.setName('restartText')
+    menuButton.setOrigin(0.5)
+    menuButton.setScrollFactor(0)
+    menuButton.setDepth(2001)
 
-    // Also handle lowercase 'r'
-    const handleRestart = () => {
+    const handleReturnToMenu = () => {
       // Clean up combat system
       this.combatSystem.removeAllListeners()
 
@@ -2191,27 +2208,35 @@ export class GameScene extends Phaser.Scene {
       this.enemies.forEach(enemy => enemy.destroy())
       this.enemies = []
 
-      // Reset all game state
+      // Reset game state
       this.currentFloor = 1
       this.isGameOver = false
       this.isInCombat = false
       this.currentWord = null
       this.isSpaceKeyDown = false
 
-      // Restart the scene completely
-      this.scene.restart()
+      // Return to main menu
+      this.scene.start('MenuScene')
     }
 
-    this.input.keyboard!.once('keydown-R', handleRestart)
-    this.input.keyboard!.once('keydown-r', handleRestart)
+    // R key to return to menu
+    this.input.keyboard!.once('keydown-R', handleReturnToMenu)
 
-    // Also add click/tap to restart for mobile
-    restartText.setInteractive({ useHandCursor: true })
-    restartText.once('pointerdown', handleRestart)
+    // Click/tap the button to return to menu
+    menuButton.setInteractive({ useHandCursor: true })
+    menuButton.once('pointerdown', handleReturnToMenu)
 
-    // Add pulsing animation to restart text
+    // Hover effect for button
+    menuButton.on('pointerover', () => {
+      menuButton.setStyle({ backgroundColor: '#34495e' })
+    })
+    menuButton.on('pointerout', () => {
+      menuButton.setStyle({ backgroundColor: '#2c3e50' })
+    })
+
+    // Add pulsing animation to button text
     this.tweens.add({
-      targets: restartText,
+      targets: menuButton,
       scaleX: 1.1,
       scaleY: 1.1,
       duration: 800,
