@@ -269,6 +269,25 @@ export class WordManager {
     return this.playerWordHistory.get(word)!
   }
 
+  /**
+   * Select word for boss encounters - mixes current and next level words
+   * 70% from current level, 30% from next level for increased challenge
+   */
+  public selectWordForBoss(currentLevel: number): WordData | null {
+    const useNextLevel = Math.random() < 0.3  // 30% chance for next level word
+
+    if (useNextLevel && currentLevel < 20) {
+      // Select from next level (30% chance)
+      const nextLevel = currentLevel + 1
+      console.log(`👑 Boss word: Using NEXT level (${nextLevel}) for extra challenge!`)
+      return this.selectWordForLevel(nextLevel)
+    } else {
+      // Select from current level (70% chance)
+      console.log(`👑 Boss word: Using current level (${currentLevel})`)
+      return this.selectWordForLevel(currentLevel)
+    }
+  }
+
   // Get player's mastery statistics
   public getPlayerStats(level?: number): {
     totalWords: number

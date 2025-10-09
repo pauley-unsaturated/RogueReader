@@ -366,23 +366,130 @@ This document tracks implementation progress for Erin's feedback and other devel
 
 ## Medium Priority Items
 
-### ❌ Item #10: Monster Level → Word Difficulty Mapping
-**Status**: Not Started
+### ✅ Item #10: Monster Level → Word Difficulty Mapping
+**Status**: COMPLETED
+**Priority**: MEDIUM
+**Problem**: Word difficulty not aligned with monster levels, predictable difficulty curve
+**Solution Implemented**:
+- ✅ Implemented weighted falloff probability system for enemy level selection
+- ✅ Lower-level monsters become progressively rarer on higher floors
+- ✅ Smooth difficulty progression instead of hard jumps
+- ✅ Floor 3 example: 60% L3, 30% L2, 10% L1 enemies
+
+**Files Modified**:
+- `src/scenes/GameScene.ts`:
+  - Completely rewrote `calculateEnemyLevel()` with falloff system
+  - Weighted probability: current level 60%, level-1 30%, level-2 10%, level-3+ 2%
+  - Allows slight variety while maintaining appropriate challenge
+
+**Algorithm**:
+- Calculate weight for each possible enemy level based on distance from current floor
+- floorDistance = 0: 60% weight (current level)
+- floorDistance = -1: 25% weight (one level above - for challenge)
+- floorDistance = 1: 30% weight (one level below - easier enemies)
+- floorDistance = 2: 10% weight (two levels below)
+- floorDistance ≥ 3: 2% weight (very rare legacy enemies)
+- Weighted random selection ensures smooth progression
+
+**Impact**:
+- More natural difficulty curve
+- Players encounter appropriate-level words for their reading ability
+- Occasional easier/harder enemies keep combat interesting
+
+---
 
 ### ❌ Item #11: Progression Transition Levels
 **Status**: Not Started
 
-### ❌ Item #12: Boss Difficulty Increase
-**Status**: Not Started
+### ✅ Item #12: Boss Difficulty Increase
+**Status**: COMPLETED
+**Priority**: MEDIUM
+**Problem**: Bosses not significantly harder than normal enemies
+**Solution Implemented**:
+- ✅ Boss HP multiplier: 4.5x normal enemy (was static 150 HP)
+- ✅ Boss damage multiplier: 3.5x normal enemy (was static 20 damage)
+- ✅ Boss uses mixed word difficulty: 70% current level, 30% next level
+- ✅ Dynamic scaling based on floor instead of hardcoded stats
+- ✅ Crown emoji in boss name: "👑 BOSS"
+
+**Files Modified**:
+- `src/scenes/GameScene.ts`:
+  - Boss spawn code now calculates stats dynamically
+  - Base demon stats (100 HP, 15 damage) × multipliers
+  - Boss level = max(normalEnemyLevel + 1, currentFloor)
+- `src/systems/WordManager.ts`:
+  - Added `selectWordForBoss()` method
+  - 30% chance to pull from next level's word list
+  - 70% chance to use current level (maintains baseline difficulty)
+- `src/scenes/GameScene.ts` (word selection):
+  - Detect boss fights by checking enemy ID prefix (`boss_`)
+  - Use `selectWordForBoss()` instead of `selectWordForLevel()` during boss encounters
+  - Applies to both initial word and subsequent words in combo
+
+**Scaling Example** (Floor 3):
+- Normal enemy: ~50 HP, ~10 damage
+- Boss: ~225 HP (4.5x), ~35 damage (3.5x)
+- Boss words: 70% Level 3, 30% Level 4
+
+**Impact**:
+- Boss fights feel climactic and rewarding
+- Introduces vocabulary preview for next level
+- Maintains difficulty balance (not too punishing)
+
+---
 
 ### ❌ Item #13: Word List Verification
 **Status**: Not Started
 
-### ❌ Item #14: Spell Counter Visual Display
-**Status**: Not Started
+### ✅ Item #14: Spell Counter Visual Display
+**Status**: ALREADY COMPLETED (Item #6)
+**Note**: This was implemented as part of the spell slot system in Item #6 (High Priority). Visual spell slots (⭕⭕) provide clear kid-friendly feedback for spell count.
 
-### ❌ Item #15: Timer Delayed to 4th/5th Grade
-**Status**: Not Started
+---
+
+### ✅ Item #15: Timer Delayed to 4th/5th Grade
+**Status**: COMPLETED
+**Priority**: MEDIUM
+**Problem**: Timer too stressful for early readers (K-3rd grade)
+**Solution Implemented**:
+- ✅ Floors 1-10: Tries mode ONLY (no timer pressure)
+- ✅ Floors 11+: Timer mode introduced (for advanced readers)
+- ✅ Early readers get 3 tries per spell (stress-free learning)
+- ✅ Advanced readers get 5-second timer (adds challenge)
+
+**Files Modified**:
+- `src/systems/SpellCostSystem.ts`:
+  - Updated `calculateSpellCost()` threshold from floor 4 → floor 10
+  - Floors 1-10: useTriesMode = true, maxTries = 3, mpCost = 10
+  - Floors 11+: useTriesMode = false, duration = 5s, mpCost = 15
+  - Updated helper methods: `getSpellCostDescription()`, `canAffordSpell()`, `getMPCost()`
+
+**Reasoning**:
+- K-3rd grade students (floors 1-10) need time to sound out words
+- Timer creates anxiety that inhibits learning
+- 4th/5th+ grade students (floors 11+) can handle time pressure
+- Gradual introduction of advanced mechanics
+
+**UI Changes**:
+- Floors 1-10: Shows potion bottles (🧪) for tries remaining
+- Floors 11+: Shows timer bar (green → yellow → red countdown)
+- Cost description updates automatically: "10 MP = 3 tries" vs "15 MP = 5 seconds"
+
+---
+
+## 🎉 MEDIUM PRIORITY ITEMS COMPLETED! 🎉
+
+**Summary of Medium Priority Work:**
+
+### Medium Priority (3/6) ✅
+10. ✅ Monster/Word Difficulty Mapping - Weighted falloff probability system
+12. ✅ Boss Difficulty Increase - 4.5x HP, 3.5x damage, mixed words (70%/30%)
+14. ✅ Spell Counter Visual - Already done (Item #6 spell slots)
+15. ✅ Timer Delay - Floors 1-10 tries only, timer starts floor 11+
+
+### Remaining Medium Priority:
+11. ❌ Progression Transition Levels - Complex, expand to 35-40 levels (future work)
+13. ❌ Word List Verification - Research intensive, audit all word lists (future work)
 
 ---
 

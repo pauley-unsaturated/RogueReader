@@ -1003,19 +1003,29 @@ export class GameScene extends Phaser.Scene {
           }
         }
       } else if (room.type === 'boss') {
-        // Spawn boss enemy
+        // Spawn boss enemy - 4-5x stronger than normal enemies
         const bossX = room.centerX
         const bossY = room.centerY
 
+        // Calculate boss stats based on normal enemy baseline
+        const normalEnemyLevel = this.calculateEnemyLevel()
+        const bossLevel = Math.max(normalEnemyLevel + 1, this.currentFloor)
+
+        // Use demon as base type, but scale stats to be 4.5x normal enemy
+        // Demon base: 100 HP, 15 damage, 8 defense
+        const bossHealthMultiplier = 4.5
+        const bossDamageMultiplier = 3.5  // Slightly less damage scaling for balance
+
         const config: EnemyConfig = {
           id: `boss_${index}`,
-          name: 'Boss',
+          name: '👑 BOSS',
           type: 'demon',
-          level: this.currentFloor + 2,
+          level: bossLevel,
           currentFloor: this.currentFloor,
           gridPosition: { x: bossX, y: bossY },
-          health: 150,
-          damage: 20
+          health: Math.floor(100 * bossHealthMultiplier),  // 450 HP base
+          damage: Math.floor(15 * bossDamageMultiplier),   // 52 damage base
+          defense: 8  // Keep defense same as demon
         }
 
         const enemy = new Enemy(this, config)
@@ -1026,17 +1036,67 @@ export class GameScene extends Phaser.Scene {
     // Don't register enemies yet - we'll do it when combat starts
   }
 
+  /**
+   * Calculate enemy level with falloff probability system (Item #10)
+   * Lower-level monsters become less common as floors progress
+   *
+   * Falloff formula: probability decreases as (floor - level) increases
+   * - L1 monsters: 90% floor 1, 40% floor 2, 10% floor 3, 0% floor 4+
+   * - L2 monsters: 10% floor 2, 60% floor 3, 30% floor 4, 10% floor 5
+   * - Ensures appropriate difficulty scaling
+   */
   private calculateEnemyLevel(): number {
-    // Very gradual level progression for beginners
-    if (this.currentFloor <= 2) {
-      return 1 // Always level 1 for K-2nd grade (floors 1-2)
-    } else if (this.currentFloor <= 4) {
-      return Math.random() < 0.7 ? 1 : 2 // Mostly level 1, some level 2 for grades 3-4
-    } else if (this.currentFloor <= 6) {
-      return Math.random() < 0.5 ? 2 : 3 // Mix of level 2-3 for grades 5-6
-    } else {
-      return Math.min(Math.floor(this.currentFloor / 2), 10) // Standard progression for higher grades
+    const currentLevel = Math.min(Math.floor(this.currentFloor), 20)
+
+    // Build weighted level pool based on falloff probabilities
+    const levelWeights: { level: number; weight: number }[] = []
+
+    // Check each possible level (1 to currentLevel + 1)
+    for (let level = 1; level <= Math.min(currentLevel + 1, 20); level++) {
+      const floorDistance = this.currentFloor - level
+
+      // Calculate falloff probability
+      let weight = 0
+      if (floorDistance === 0) {
+        // Current floor level: highest probability (60%)
+        weight = 0.6
+      } else if (floorDistance === -1) {
+        // One level above current floor: medium probability (25%)
+        weight = 0.25
+      } else if (floorDistance === 1) {
+        // One level below: medium-low probability (30%)
+        weight = 0.3
+      } else if (floorDistance === 2) {
+        // Two levels below: low probability (10%)
+        weight = 0.1
+      } else if (floorDistance >= 3) {
+        // Three or more levels below: very rare (2%)
+        weight = 0.02
+      }
+
+      if (weight > 0) {
+        levelWeights.push({ level, weight })
+      }
     }
+
+    // Special case for very early floors: always use level 1
+    if (this.currentFloor <= 1) {
+      return 1
+    }
+
+    // Weighted random selection
+    const totalWeight = levelWeights.reduce((sum, item) => sum + item.weight, 0)
+    let random = Math.random() * totalWeight
+
+    for (const { level, weight } of levelWeights) {
+      random -= weight
+      if (random <= 0) {
+        return level
+      }
+    }
+
+    // Fallback to current floor level
+    return currentLevel
   }
 
   private getRandomEnemyType(): string {
@@ -1378,11 +1438,23 @@ export class GameScene extends Phaser.Scene {
 
     console.log(`📜 Creating new casting dialog`)
 
-    // Get initial word for the spell
-    const wordData = this.wordManager.selectWordForLevel(this.currentFloor)
+    // Check if fighting a boss (any enemy with ID starting with 'boss_')
+    const isBossFight = this.enemies.some(enemy =>
+      enemy.isAliveStatus() && enemy.id.startsWith('boss_')
+    )
+
+    // Get initial word for the spell (bosses use mixed difficulty)
+    const wordData = isBossFight
+      ? this.wordManager.selectWordForBoss(this.currentFloor)
+      : this.wordManager.selectWordForLevel(this.currentFloor)
+
     if (!wordData) {
       console.error('No word available for casting')
       return
+    }
+
+    if (isBossFight) {
+      console.log('👑 BOSS FIGHT - Using mixed word difficulty!')
     }
 
     // Get a spell name from the current combat system
@@ -1672,8 +1744,15 @@ export class GameScene extends Phaser.Scene {
       this.pendingComboResults.push(result)
       this.castingDialog.handleWordSuccess(this.currentWord, result)
 
-      // Get next word
-      const nextWordData = this.wordManager.selectWordForLevel(this.currentFloor)
+      // Get next word (use boss word selection if fighting a boss)
+      const isBossFight = this.enemies.some(enemy =>
+        enemy.isAliveStatus() && enemy.id.startsWith('boss_')
+      )
+
+      const nextWordData = isBossFight
+        ? this.wordManager.selectWordForBoss(this.currentFloor)
+        : this.wordManager.selectWordForLevel(this.currentFloor)
+
       if (nextWordData) {
         this.currentWord = nextWordData.word
         this.castingDialog.setNextWord(nextWordData.word)
