@@ -493,22 +493,114 @@ This document tracks implementation progress for Erin's feedback and other devel
 
 ---
 
+## Low Priority Items
+
+### ✅ Item #21: Bigger Maps, More Enemy Rooms
+**Status**: COMPLETED
+**Priority**: LOW
+**Problem**: Maps feel small, too many treasure/shop rooms (felt like 50/25/25 split)
+**Solution Implemented**:
+- ✅ Increased BASE_ROOMS from 5 to 8 (+60% starting size)
+- ✅ Increased MAX_ROOMS from 20 to 30 (+50% late-game capacity)
+- ✅ Changed room distribution to 80% combat, 10% treasure, 10% shop
+- ✅ Removed puzzle rooms entirely (was 15% of distribution)
+
+**Files Modified**:
+- `src/config/GameConfig.ts`:
+  - BASE_ROOMS: 5 → 8
+  - MAX_ROOMS: 20 → 30
+- `src/systems/DungeonGenerator.ts`:
+  - Room type probability: 50% combat → 80% combat
+  - Treasure: 20% → 10%
+  - Shop: 15% → 10%
+  - Puzzle: 15% → removed
+
+**Before vs After**:
+```
+Floor 1:  7 rooms → 10 rooms (+43%)
+Floor 5: 17 rooms → 20 rooms (+18%)
+Floor 8: 20 rooms → 28 rooms (+40%, was capped)
+Floor 12: 20 rooms → 30 rooms (+50%, now capped)
+```
+
+**Room Distribution** (example 10-room dungeon):
+- Before: 5 combat, 2 treasure, 1.5 puzzle, 1.5 shop
+- After: 8 combat, 1 treasure, 1 shop
+- Result: 60% more combat encounters per floor!
+
+**Impact**:
+- Dungeons feel more expansive and combat-focused
+- Less "shopping simulator", more roguelike gameplay
+- Exploration takes longer, but feels more rewarding
+- Better aligns with educational focus (more words per floor)
+
+---
+
+## 🎉 LOW PRIORITY ITEMS STARTED! 🎉
+
+**Summary of Low Priority Work:**
+- ✅ Item #21: Bigger Maps - 60% more rooms, 80/10/10 distribution
+
+---
+
+## Unit Tests Added
+
+### ✅ SpellCostSystem Tests (Item #15 validation)
+**File**: `tests/unit/spell-cost.test.ts`
+**Coverage**:
+- ✅ Tries mode for floors 1-10 (3 tries, 10 MP cost)
+- ✅ Timer mode for floors 11+ (5s duration, 15 MP cost)
+- ✅ Floor 10 boundary (last tries floor)
+- ✅ Floor 11 boundary (first timer floor)
+- ✅ MP affordability checks for both modes
+- ✅ Cost description strings
+- ✅ Rejection when insufficient MP
+
+**Results**: 11/11 tests passed ✅
+
+### ✅ WordManager Boss Selection Tests (Item #12 validation)
+**File**: `tests/unit/word-manager.test.ts`
+**Coverage**:
+- ✅ Boss word distribution (70% current level, 30% next level)
+- ✅ Statistical validation over 100 iterations (74% current / 26% next - within variance)
+- ✅ Max level boundary (level 20 doesn't exceed)
+- ✅ Early level handling (levels 1-2)
+- ✅ Baseline comparison (normal enemies always use exact level)
+
+**Results**: 4/4 tests passed ✅
+
+**Total New Tests**: 15/15 passed ✅
+
+---
+
 ## Testing Log
 
 ### TypeScript Checks
-- [ ] Initial typecheck before starting
+- ✅ All checks passed after Medium Priority implementation
+- ✅ All checks passed after Low Priority (#21) implementation
+- ✅ No compilation errors
+
+### Unit Tests
+- ✅ SpellCostSystem tests (11 tests): Timer/tries mode switching
+- ✅ WordManager tests (4 tests): Boss word selection 70/30 split
+- ✅ DungeonGenerator tests (existing): Room reachability validation
 
 ### E2E Tests
-- [ ] Run after critical fixes
+- [ ] Run after all priority fixes
 
 ### Manual Tests
 - [ ] Test on 1366x768 Chromebook (after viewport fix)
 - [ ] Verify HP/MP readable from 3 feet
 - [ ] Verify no word repeats in 10 combat encounters
+- [ ] Verify boss difficulty feels 4-5x harder
+- [ ] Verify timer doesn't appear before floor 11
 
 ---
 
 ## Notes
-- Starting with Critical Priority items (#1-5)
-- Will run typecheck after each major change
-- Will update this file with ✅ as items complete
+- All Critical Priority items (5/5) completed ✅
+- All High Priority items (4/4) completed ✅
+- Medium Priority items (3/6) completed ✅
+- Low Priority items (1/21) completed ✅
+- Comprehensive unit tests added for all Medium Priority changes
+- TypeScript checks pass on all changes

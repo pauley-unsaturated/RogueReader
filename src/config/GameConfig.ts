@@ -3,13 +3,13 @@ export const GAME_CONFIG = {
   GRID_WIDTH: 32,
   GRID_HEIGHT: 24,
   
-  // Room generation with updated scaling
+  // Room generation with updated scaling (Item #21: Bigger Maps)
   ROOM_CONFIG: {
     MIN_ROOM_SIZE: 5,
     MAX_ROOM_SIZE: 9,
-    BASE_ROOMS: 5,
+    BASE_ROOMS: 8, // Increased from 5 for bigger dungeons
     ROOMS_PER_FLOOR: 2.5, // Adds 2-3 rooms per level on average
-    MAX_ROOMS: 20
+    MAX_ROOMS: 30 // Increased from 20 for larger late-game dungeons
   },
   
   // Combat

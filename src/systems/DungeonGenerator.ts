@@ -178,11 +178,12 @@ export class DungeonGenerator {
 
     // Boss room will be assigned later via distance-based algorithm
 
+    // Item #21: Adjusted room distribution for more combat focus
+    // 80% combat, 10% treasure, 10% shop (was 50/20/15/15)
     const rand = Math.random()
-    if (rand < 0.5) return 'combat'
-    if (rand < 0.7) return 'treasure'
-    if (rand < 0.85) return 'puzzle'
-    return 'shop'
+    if (rand < 0.80) return 'combat'  // 80% combat rooms
+    if (rand < 0.90) return 'treasure' // 10% treasure rooms
+    return 'shop'                       // 10% shop rooms
   }
 
   /**
