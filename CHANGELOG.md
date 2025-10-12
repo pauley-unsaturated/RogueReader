@@ -398,23 +398,54 @@ This document tracks implementation progress for Erin's feedback and other devel
 
 ---
 
-### 🔄 Item #11: Progression Transition Levels
-**Status**: In Progress - Foundation Complete
+### ✅ Item #11: Progression Transition Levels
+**Status**: COMPLETED
 **Priority**: MEDIUM
-**Goal**: Expand from 20 floors (1:1 mapping) to 35-40 floors with transition levels mixing two word difficulties
+**Problem**: Difficulty jumps too steep between reading levels, game needs smoother progression
+**Solution Implemented**:
+- ✅ Expanded from 20 floors to **40 floors** (35-40 range as requested)
+- ✅ 2 floors per reading level (40 floors → 20 reading levels)
+- ✅ Odd floors (1,3,5...): Pure reading levels (100% single difficulty)
+- ✅ Even floors (2,4,6...38): Transition levels (50/50 mix of current + next level)
+- ✅ 19 transitions total, providing smooth difficulty curve
+- ✅ Updated WordManager to handle mixed word pools
+- ✅ All tests passing (75 unit tests)
 
-**Foundation Work Completed**:
-- ✅ Created ProgressionSystem class to centralize all progression logic
-- ✅ Extracted ~150 lines from GameScene (progression logic now isolated)
-- ✅ Designed extensible API with `getTransitionMix()` for future implementation
-- ✅ 50 comprehensive unit tests validating all progression mechanics
-- ✅ GameScene refactored to use ProgressionSystem for all floor/level calculations
+**Files Modified**:
+- `src/systems/ProgressionSystem.ts`:
+  - Updated MAX_FLOOR from 20 → 40
+  - Implemented `getTransitionMix()` - returns 50/50 ratio for even floors
+  - Updated `getWordLevelForFloor()` - 2 floors per reading level (Math.ceil(floor/2))
+  - Updated `isTransitionLevel()` - checks if floor is even
+- `src/systems/WordManager.ts`:
+  - Added `resetSessionWordPoolForFloor()` method
+  - Samples words from two levels based on transition mix ratio
+  - Dynamically imports ProgressionSystem to avoid circular dependency
+  - Shuffles and combines words from both levels for smooth transitions
+- `src/scenes/GameScene.ts`:
+  - Updated combat listener to call `resetSessionWordPoolForFloor()` (async)
+  - Now uses floor-aware word selection instead of level-only
+- `tests/unit/progression-system.test.ts`:
+  - Updated all floor/level mapping tests for 40-floor system
+  - Added transition level tests (even/odd floor detection, mix ratios)
+  - Updated progression table tests (40 entries, 19 transitions)
+  - All 55 ProgressionSystem tests passing
 
-**Next Steps**:
-- ⏳ Define 35-40 floor → 20 level mapping with transition floors
-- ⏳ Implement `getTransitionMix()` logic (50/50, 25/75 blends)
-- ⏳ Update WordManager to sample from mixed difficulty levels
-- ⏳ Add transition level unit tests
+**Progression Mapping Examples**:
+- Floor 1: 100% Level 1 (Kindergarten)
+- Floor 2: 50% L1 / 50% L2 (transition)
+- Floor 3: 100% Level 2 (1st Grade)
+- Floor 4: 50% L2 / 50% L3 (transition)
+- ...
+- Floor 39: 100% Level 20 (10th Grade)
+- Floor 40: 100% Level 20 (final floor)
+
+**Benefits**:
+- Smoother difficulty curve (no sudden jumps)
+- Players gradually introduced to next level's vocabulary
+- Game length doubled (20 → 40 floors) for more content
+- Foundation ready for further tuning (can adjust ratio from 50/50 to 25/75 if needed)
+- Maintains backward compatibility with existing word lists
 
 ### ✅ Item #12: Boss Difficulty Increase
 **Status**: COMPLETED
@@ -496,14 +527,14 @@ This document tracks implementation progress for Erin's feedback and other devel
 
 **Summary of Medium Priority Work:**
 
-### Medium Priority (3/6) ✅
+### Medium Priority (4/6) ✅
 10. ✅ Monster/Word Difficulty Mapping - Weighted falloff probability system
+11. ✅ Progression Transition Levels - 40 floors, smooth 50/50 transitions
 12. ✅ Boss Difficulty Increase - 4.5x HP, 3.5x damage, mixed words (70%/30%)
 14. ✅ Spell Counter Visual - Already done (Item #6 spell slots)
 15. ✅ Timer Delay - Floors 1-10 tries only, timer starts floor 11+
 
 ### Remaining Medium Priority:
-11. 🔄 Progression Transition Levels - Foundation complete, implementation in progress
 13. ❌ Word List Verification - Research intensive, audit all word lists (future work)
 
 ---

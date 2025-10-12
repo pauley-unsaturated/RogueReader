@@ -36,34 +36,72 @@ export interface BossConfig {
 
 export class ProgressionSystem {
   private static readonly MAX_READING_LEVEL = 20;
-  private static readonly MAX_FLOOR = 20; // Will expand to 40 with Item #11
+  private static readonly MAX_FLOOR = 40; // Expanded from 20 (Item #11)
 
   /**
    * Get the primary reading level for a given floor
-   * Currently 1:1 mapping, but will support transitions in Item #11
+   *
+   * Item #11 Implementation: 40 floors mapping to 20 reading levels
+   * - 2 floors per reading level
+   * - Odd floors: Pure reading level
+   * - Even floors: Transition to next level
+   *
+   * Example:
+   * - Floor 1: Level 1 (Kindergarten)
+   * - Floor 2: Level 1→2 transition
+   * - Floor 3: Level 2 (1st Grade)
+   * - Floor 4: Level 2→3 transition
    */
   public static getWordLevelForFloor(floor: number): number {
+    // Cap floor at maximum
+    const cappedFloor = Math.max(1, Math.min(Math.floor(floor), this.MAX_FLOOR));
+
+    // Calculate reading level: 2 floors per reading level
+    // Floors 1-2 = Level 1, Floors 3-4 = Level 2, etc.
+    const level = Math.ceil(cappedFloor / 2);
+
     // Cap at max reading level
-    const level = Math.min(Math.floor(floor), this.MAX_READING_LEVEL);
-    return Math.max(1, level);
+    return Math.min(level, this.MAX_READING_LEVEL);
   }
 
   /**
    * Get transition mix for floors that blend two reading levels
-   * Returns null for non-transition floors
+   * Returns null for non-transition floors (odd floors)
    *
-   * Future (Item #11): Will return mix ratios for transition levels
-   * Example: Floor 11 might return { currentLevel: 1, nextLevel: 2, ratio: 0.5 }
+   * Item #11 Implementation: Even floors are transitions (50/50 mix)
+   * - Floor 2: 50% L1 / 50% L2
+   * - Floor 4: 50% L2 / 50% L3
+   * - Floor 6: 50% L3 / 50% L4
+   * etc.
    */
-  public static getTransitionMix(_floor: number): TransitionMix | null {
-    // Current implementation: No transitions yet
-    // Item #11 will implement this based on transition level design
+  public static getTransitionMix(floor: number): TransitionMix | null {
+    // Cap floor at maximum
+    const cappedFloor = Math.max(1, Math.min(Math.floor(floor), this.MAX_FLOOR));
+
+    // Even floors are transitions
+    if (cappedFloor % 2 === 0) {
+      const currentLevel = this.getWordLevelForFloor(cappedFloor);
+      const nextLevel = Math.min(currentLevel + 1, this.MAX_READING_LEVEL);
+
+      // Don't create transition if already at max level
+      if (currentLevel >= this.MAX_READING_LEVEL) {
+        return null;
+      }
+
+      return {
+        currentLevel,
+        nextLevel,
+        ratio: 0.5 // 50/50 mix
+      };
+    }
+
+    // Odd floors are pure levels (no transition)
     return null;
   }
 
   /**
    * Check if a floor is a transition level (mixing two word difficulties)
-   * Future (Item #11): Will identify floors between major reading levels
+   * Item #11: Even floors are transitions
    */
   public static isTransitionLevel(floor: number): boolean {
     return this.getTransitionMix(floor) !== null;

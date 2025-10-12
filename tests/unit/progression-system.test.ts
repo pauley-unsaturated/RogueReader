@@ -3,14 +3,23 @@ import { ProgressionSystem } from '@/systems/ProgressionSystem';
 
 describe('ProgressionSystem - Floor to Level Mapping', () => {
   describe('getWordLevelForFloor()', () => {
-    it('should map floors 1-20 to reading levels 1-20', () => {
-      for (let floor = 1; floor <= 20; floor++) {
-        expect(ProgressionSystem.getWordLevelForFloor(floor)).toBe(floor);
-      }
+    it('should map 2 floors per reading level (Item #11)', () => {
+      // Floors 1-2: Level 1
+      expect(ProgressionSystem.getWordLevelForFloor(1)).toBe(1);
+      expect(ProgressionSystem.getWordLevelForFloor(2)).toBe(1);
+      // Floors 3-4: Level 2
+      expect(ProgressionSystem.getWordLevelForFloor(3)).toBe(2);
+      expect(ProgressionSystem.getWordLevelForFloor(4)).toBe(2);
+      // Floors 5-6: Level 3
+      expect(ProgressionSystem.getWordLevelForFloor(5)).toBe(3);
+      expect(ProgressionSystem.getWordLevelForFloor(6)).toBe(3);
+      // Floors 39-40: Level 20
+      expect(ProgressionSystem.getWordLevelForFloor(39)).toBe(20);
+      expect(ProgressionSystem.getWordLevelForFloor(40)).toBe(20);
     });
 
     it('should cap at max reading level (20)', () => {
-      expect(ProgressionSystem.getWordLevelForFloor(25)).toBe(20);
+      expect(ProgressionSystem.getWordLevelForFloor(45)).toBe(20);
       expect(ProgressionSystem.getWordLevelForFloor(100)).toBe(20);
     });
 
@@ -23,37 +32,87 @@ describe('ProgressionSystem - Floor to Level Mapping', () => {
     });
   });
 
-  describe('getTransitionMix()', () => {
-    it('should return null for current implementation (no transitions yet)', () => {
-      // Item #11 will implement transitions
+  describe('getTransitionMix() - Item #11', () => {
+    it('should return null for odd floors (pure levels)', () => {
       expect(ProgressionSystem.getTransitionMix(1)).toBeNull();
+      expect(ProgressionSystem.getTransitionMix(3)).toBeNull();
       expect(ProgressionSystem.getTransitionMix(5)).toBeNull();
-      expect(ProgressionSystem.getTransitionMix(20)).toBeNull();
+      expect(ProgressionSystem.getTransitionMix(39)).toBeNull();
+    });
+
+    it('should return 50/50 mix for even floors (transitions)', () => {
+      // Floor 2: L1 → L2
+      const mix2 = ProgressionSystem.getTransitionMix(2);
+      expect(mix2).not.toBeNull();
+      expect(mix2?.currentLevel).toBe(1);
+      expect(mix2?.nextLevel).toBe(2);
+      expect(mix2?.ratio).toBe(0.5);
+
+      // Floor 4: L2 → L3
+      const mix4 = ProgressionSystem.getTransitionMix(4);
+      expect(mix4?.currentLevel).toBe(2);
+      expect(mix4?.nextLevel).toBe(3);
+      expect(mix4?.ratio).toBe(0.5);
+
+      // Floor 38: L19 → L20
+      const mix38 = ProgressionSystem.getTransitionMix(38);
+      expect(mix38?.currentLevel).toBe(19);
+      expect(mix38?.nextLevel).toBe(20);
+      expect(mix38?.ratio).toBe(0.5);
+    });
+
+    it('should return null for floor 40 (max level, no next)', () => {
+      expect(ProgressionSystem.getTransitionMix(40)).toBeNull();
     });
   });
 
-  describe('isTransitionLevel()', () => {
-    it('should return false for all floors in current implementation', () => {
-      for (let floor = 1; floor <= 20; floor++) {
-        expect(ProgressionSystem.isTransitionLevel(floor)).toBe(false);
-      }
+  describe('isTransitionLevel() - Item #11', () => {
+    it('should return true for even floors (2, 4, 6...38)', () => {
+      expect(ProgressionSystem.isTransitionLevel(2)).toBe(true);
+      expect(ProgressionSystem.isTransitionLevel(4)).toBe(true);
+      expect(ProgressionSystem.isTransitionLevel(6)).toBe(true);
+      expect(ProgressionSystem.isTransitionLevel(38)).toBe(true);
+    });
+
+    it('should return false for odd floors', () => {
+      expect(ProgressionSystem.isTransitionLevel(1)).toBe(false);
+      expect(ProgressionSystem.isTransitionLevel(3)).toBe(false);
+      expect(ProgressionSystem.isTransitionLevel(39)).toBe(false);
+    });
+
+    it('should return false for floor 40 (max level)', () => {
+      expect(ProgressionSystem.isTransitionLevel(40)).toBe(false);
     });
   });
 
-  describe('getLevelName()', () => {
-    it('should return correct grade names for levels 1-11', () => {
+  describe('getLevelName() - Item #11', () => {
+    it('should return correct grade names based on floor (2 floors per level)', () => {
+      // Floors 1-2: Level 1 = Kindergarten
       expect(ProgressionSystem.getLevelName(1)).toBe('Kindergarten');
-      expect(ProgressionSystem.getLevelName(2)).toBe('1st Grade');
-      expect(ProgressionSystem.getLevelName(3)).toBe('2nd Grade');
-      expect(ProgressionSystem.getLevelName(4)).toBe('3rd Grade');
-      expect(ProgressionSystem.getLevelName(5)).toBe('4th Grade');
-      expect(ProgressionSystem.getLevelName(10)).toBe('9th Grade');
-      expect(ProgressionSystem.getLevelName(11)).toBe('10th Grade');
+      expect(ProgressionSystem.getLevelName(2)).toBe('Kindergarten');
+      // Floors 3-4: Level 2 = 1st Grade
+      expect(ProgressionSystem.getLevelName(3)).toBe('1st Grade');
+      expect(ProgressionSystem.getLevelName(4)).toBe('1st Grade');
+      // Floors 5-6: Level 3 = 2nd Grade
+      expect(ProgressionSystem.getLevelName(5)).toBe('2nd Grade');
+      expect(ProgressionSystem.getLevelName(6)).toBe('2nd Grade');
+      // Floors 7-8: Level 4 = 3rd Grade
+      expect(ProgressionSystem.getLevelName(7)).toBe('3rd Grade');
+      expect(ProgressionSystem.getLevelName(8)).toBe('3rd Grade');
+      // Floors 9-10: Level 5 = 4th Grade
+      expect(ProgressionSystem.getLevelName(9)).toBe('4th Grade');
+      expect(ProgressionSystem.getLevelName(10)).toBe('4th Grade');
+      // Floors 19-20: Level 10 = 9th Grade
+      expect(ProgressionSystem.getLevelName(19)).toBe('9th Grade');
+      expect(ProgressionSystem.getLevelName(20)).toBe('9th Grade');
+      // Floors 21-22: Level 11 = 10th Grade
+      expect(ProgressionSystem.getLevelName(21)).toBe('10th Grade');
+      expect(ProgressionSystem.getLevelName(22)).toBe('10th Grade');
     });
 
-    it('should generate grade names for higher levels', () => {
-      expect(ProgressionSystem.getLevelName(15)).toContain('Grade');
-      expect(ProgressionSystem.getLevelName(20)).toContain('Grade');
+    it('should generate grade names for higher floors', () => {
+      expect(ProgressionSystem.getLevelName(30)).toContain('Grade');
+      expect(ProgressionSystem.getLevelName(40)).toContain('Grade');
     });
   });
 });
@@ -136,8 +195,8 @@ describe('ProgressionSystem - Enemy Scaling', () => {
       expect(levelCounts[11]).toBeLessThan(350);
 
       // Level 9 should appear (~30%)
-      expect(levelCounts[9]).toBeGreaterThan(200);
-      expect(levelCounts[9]).toBeLessThan(400);
+      expect(levelCounts[9]).toBeGreaterThan(180);
+      expect(levelCounts[9]).toBeLessThan(420);
 
       console.log(`Enemy level distribution for floor ${floor}:`, levelCounts);
     });
@@ -340,10 +399,10 @@ describe('ProgressionSystem - Gameplay Mechanics', () => {
 });
 
 describe('ProgressionSystem - Progression Table', () => {
-  describe('getProgressionTable()', () => {
-    it('should return entry for each floor (1-20)', () => {
+  describe('getProgressionTable() - Item #11', () => {
+    it('should return entry for each floor (1-40)', () => {
       const table = ProgressionSystem.getProgressionTable();
-      expect(table).toHaveLength(20);
+      expect(table).toHaveLength(40);
     });
 
     it('should have correct structure for each entry', () => {
@@ -359,18 +418,39 @@ describe('ProgressionSystem - Progression Table', () => {
       });
     });
 
-    it('should show 1:1 floor to level mapping currently', () => {
+    it('should show 2 floors per level mapping (40 floors → 20 levels)', () => {
       const table = ProgressionSystem.getProgressionTable();
 
-      table.forEach((entry) => {
-        expect(entry.level).toBe(entry.floor);
+      // Check first few pairs
+      expect(table[0]).toEqual({ floor: 1, level: 1, isTransition: false });
+      expect(table[1]).toEqual({ floor: 2, level: 1, isTransition: true });
+      expect(table[2]).toEqual({ floor: 3, level: 2, isTransition: false });
+      expect(table[3]).toEqual({ floor: 4, level: 2, isTransition: true });
+
+      // Check last pair
+      expect(table[38]).toEqual({ floor: 39, level: 20, isTransition: false });
+      expect(table[39]).toEqual({ floor: 40, level: 20, isTransition: false });
+    });
+
+    it('should show 19 transitions (even floors 2,4,6...38)', () => {
+      const table = ProgressionSystem.getProgressionTable();
+      const transitions = table.filter(entry => entry.isTransition);
+
+      expect(transitions).toHaveLength(19);
+
+      // All transitions should be on even floors (except 40)
+      transitions.forEach(entry => {
+        expect(entry.floor % 2).toBe(0);
+        expect(entry.floor).toBeLessThan(40);
       });
     });
 
-    it('should show no transitions in current implementation', () => {
+    it('should show odd floors as pure levels', () => {
       const table = ProgressionSystem.getProgressionTable();
+      const pureLevels = table.filter(entry => entry.floor % 2 === 1);
 
-      table.forEach((entry) => {
+      expect(pureLevels).toHaveLength(20);
+      pureLevels.forEach(entry => {
         expect(entry.isTransition).toBe(false);
       });
     });

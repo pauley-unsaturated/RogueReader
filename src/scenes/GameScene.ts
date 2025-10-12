@@ -690,10 +690,11 @@ export class GameScene extends Phaser.Scene {
 
   private setupCombatListeners(): void {
     // Listen for combat events
-    this.combatSystem.on('combatStarted', () => {
+    this.combatSystem.on('combatStarted', async () => {
       this.isInCombat = true
       // Reset word pool to prevent repeats within this combat session
-      this.wordManager.resetSessionWordPool(this.currentFloor)
+      // Item #11: Use floor-based method that handles transition levels
+      await this.wordManager.resetSessionWordPoolForFloor(this.currentFloor)
       this.showCombatPrompt()
       // NOTE: Door locking now happens on room entry (in update loop), not here
     })

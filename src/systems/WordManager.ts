@@ -121,6 +121,57 @@ export class WordManager {
   }
 
   /**
+   * Reset session word pool for a specific floor (Item #11)
+   * Handles transition levels by mixing two word difficulty levels
+   *
+   * @param floor - Current dungeon floor (1-40)
+   */
+  public async resetSessionWordPoolForFloor(floor: number): Promise<void> {
+    // Dynamic import to avoid circular dependency
+    const { ProgressionSystem } = await import('@/systems/ProgressionSystem')
+
+    this.currentSessionUsedWords.clear()
+
+    // Check if this floor is a transition level
+    const transitionMix = ProgressionSystem.getTransitionMix(floor)
+
+    if (transitionMix) {
+      // Transition level: Mix two difficulty levels
+      const { currentLevel, nextLevel, ratio } = transitionMix
+
+      // Load words for both levels
+      await this.loadWordsForLevel(currentLevel)
+      await this.loadWordsForLevel(nextLevel)
+
+      const currentWords = this.wordsByLevel.get(currentLevel) || this.getFallbackWords(currentLevel)
+      const nextWords = this.wordsByLevel.get(nextLevel) || this.getFallbackWords(nextLevel)
+
+      // Calculate how many words to take from each level
+      const totalCount = currentWords.length + nextWords.length
+      const nextCount = Math.round(totalCount * ratio)
+      const currentCount = totalCount - nextCount
+
+      // Sample words from each level
+      const currentSample = this.shuffleArray([...currentWords]).slice(0, currentCount)
+      const nextSample = this.shuffleArray([...nextWords]).slice(0, nextCount)
+
+      // Combine and shuffle
+      this.currentSessionWordPool = this.shuffleArray([...currentSample, ...nextSample])
+
+      console.log(`📚 Transition floor ${floor}: Mixed ${currentSample.length} L${currentLevel} words + ${nextSample.length} L${nextLevel} words (${Math.round(ratio * 100)}% from next level)`)
+    } else {
+      // Pure level: Use single difficulty
+      const level = ProgressionSystem.getWordLevelForFloor(floor)
+      await this.loadWordsForLevel(level)
+
+      const levelWords = this.wordsByLevel.get(level) || this.getFallbackWords(level)
+      this.currentSessionWordPool = this.shuffleArray([...levelWords])
+
+      console.log(`📚 Pure floor ${floor}: Reset word pool with ${this.currentSessionWordPool.length} words for level ${level}`)
+    }
+  }
+
+  /**
    * Fisher-Yates shuffle for unbiased randomization
    */
   private shuffleArray<T>(array: T[]): T[] {
