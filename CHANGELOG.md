@@ -398,8 +398,23 @@ This document tracks implementation progress for Erin's feedback and other devel
 
 ---
 
-### ❌ Item #11: Progression Transition Levels
-**Status**: Not Started
+### 🔄 Item #11: Progression Transition Levels
+**Status**: In Progress - Foundation Complete
+**Priority**: MEDIUM
+**Goal**: Expand from 20 floors (1:1 mapping) to 35-40 floors with transition levels mixing two word difficulties
+
+**Foundation Work Completed**:
+- ✅ Created ProgressionSystem class to centralize all progression logic
+- ✅ Extracted ~150 lines from GameScene (progression logic now isolated)
+- ✅ Designed extensible API with `getTransitionMix()` for future implementation
+- ✅ 50 comprehensive unit tests validating all progression mechanics
+- ✅ GameScene refactored to use ProgressionSystem for all floor/level calculations
+
+**Next Steps**:
+- ⏳ Define 35-40 floor → 20 level mapping with transition floors
+- ⏳ Implement `getTransitionMix()` logic (50/50, 25/75 blends)
+- ⏳ Update WordManager to sample from mixed difficulty levels
+- ⏳ Add transition level unit tests
 
 ### ✅ Item #12: Boss Difficulty Increase
 **Status**: COMPLETED
@@ -488,8 +503,84 @@ This document tracks implementation progress for Erin's feedback and other devel
 15. ✅ Timer Delay - Floors 1-10 tries only, timer starts floor 11+
 
 ### Remaining Medium Priority:
-11. ❌ Progression Transition Levels - Complex, expand to 35-40 levels (future work)
+11. 🔄 Progression Transition Levels - Foundation complete, implementation in progress
 13. ❌ Word List Verification - Research intensive, audit all word lists (future work)
+
+---
+
+## Architectural Improvements
+
+### ✅ ProgressionSystem Extraction
+**Status**: COMPLETED
+**Type**: Refactoring (preparation for Item #11)
+**Problem**: GameScene.ts was a 2,552-line "god object" with 91 methods handling 10+ responsibilities
+**Solution Implemented**:
+- ✅ Created `ProgressionSystem` class - centralized progression logic
+- ✅ Extracted ~150 lines of floor/level mapping, enemy scaling, boss config
+- ✅ Static utility class pattern (like SpellCostSystem)
+- ✅ Designed for extensibility (supports transition levels in Item #11)
+- ✅ 50 comprehensive unit tests (100% passing)
+- ✅ GameScene refactored to use ProgressionSystem
+
+**Files Created**:
+- `src/systems/ProgressionSystem.ts` (300 lines)
+  - Floor → Reading Level mapping (1-20 currently, 1-40 ready)
+  - Enemy level weights with falloff probability (60/25/30/10/2%)
+  - Enemy count/type pools by floor
+  - Boss configuration and scaling (4.5x HP, 3.5x damage)
+  - Drop chance calculations (consumables, runes)
+  - Combat pause logic (K-4th grade gets pause)
+  - Transition mix API (stub for Item #11)
+- `tests/unit/progression-system.test.ts` (50 tests)
+  - Floor to level mapping (8 tests)
+  - Enemy scaling and weights (18 tests)
+  - Boss configuration (6 tests)
+  - Gameplay mechanics (11 tests)
+  - Progression table (7 tests)
+
+**Files Modified**:
+- `src/scenes/GameScene.ts`:
+  - Replaced `calculateEnemyLevel()` - was 60 lines, now 3 lines
+  - Replaced `getRandomEnemyType()` - was 20 lines, now 3 lines
+  - Updated `pauseEnemiesForSpellCasting()` to use ProgressionSystem
+  - Updated `resumeEnemiesAfterSpellCasting()` to use ProgressionSystem
+  - Updated `checkConsumableDrop()` to use ProgressionSystem
+  - Updated `checkRuneDrop()` to use ProgressionSystem
+  - Updated boss spawning logic to use ProgressionSystem.getBossConfig()
+
+**Key Interfaces**:
+```typescript
+interface TransitionMix {
+  currentLevel: number;
+  nextLevel: number;
+  ratio: number; // 0.0-1.0 for Item #11
+}
+
+interface EnemyLevelWeights {
+  level: number;
+  weight: number; // Falloff probability
+}
+
+interface BossConfig {
+  hpMultiplier: number;      // 4.5x
+  damageMultiplier: number;  // 3.5x
+  wordLevelBoost: number;    // +1 level
+}
+```
+
+**Benefits**:
+- Single source of truth for all progression logic
+- GameScene reduced by ~150 lines (now 2,400 lines)
+- Fully tested progression mechanics
+- Ready for Item #11 (transition levels)
+- Easier to maintain and extend
+- Clear separation of concerns
+
+**Test Results**:
+- ✅ 50/50 ProgressionSystem tests passing
+- ✅ 70/70 total unit tests passing
+- ✅ TypeScript compilation successful
+- ✅ All statistical distributions validated
 
 ---
 

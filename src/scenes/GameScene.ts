@@ -14,6 +14,7 @@ import { SpeechRecognitionResult } from '@/services/SpeechRecognitionService'
 import { PronunciationHelpService } from '@/services/PronunciationHelpService'
 import { StreamingSpeechService } from '@/services/StreamingSpeechService'
 import { SpellCostSystem } from '@/systems/SpellCostSystem'
+import { ProgressionSystem } from '@/systems/ProgressionSystem'
 import { CurrencySystem } from '@/systems/CurrencySystem'
 import { InventorySystem } from '@/systems/InventorySystem'
 import { HotBarUI } from '@/components/HotBarUI'
@@ -604,42 +605,28 @@ export class GameScene extends Phaser.Scene {
   }
 
   private checkConsumableDrop(enemyType: string): void {
-    // Boss enemies always drop consumables
-    if (enemyType === 'demon') {
-      const rareConsumable = this.inventorySystem.getConsumableSystem().generateRandomConsumable(this.currentFloor)
-      if (rareConsumable) {
-        this.inventorySystem.addConsumable(rareConsumable, 1)
-        console.log(`👑 Boss dropped rare consumable: ${rareConsumable}`)
-      }
-      return
-    }
+    const isBoss = (enemyType === 'demon')
+    const dropChance = ProgressionSystem.getConsumableDropChance(this.currentFloor, isBoss)
 
-    // Regular enemies have 15-20% chance
-    const dropChance = 0.15 + (this.currentFloor * 0.01) // Increases with floor
     if (Math.random() < dropChance) {
       const consumable = this.inventorySystem.getConsumableSystem().generateRandomConsumable(this.currentFloor)
       if (consumable) {
         this.inventorySystem.addConsumable(consumable, 1)
-        console.log(`🎁 Enemy dropped consumable: ${consumable}`)
+        const icon = isBoss ? '👑' : '🎁'
+        console.log(`${icon} Enemy dropped consumable: ${consumable} (${Math.round(dropChance * 100)}% chance)`)
       }
     }
   }
 
   private checkRuneDrop(enemyType: string): void {
-    let dropChance = 0.1 // 10% base chance
-
-    // Bosses have much higher rune drop chance
-    if (enemyType === 'demon') {
-      dropChance = 1.0 // 100% chance for bosses
-    }
-
-    // Increase chance with floor level
-    dropChance += this.currentFloor * 0.02
+    const isBoss = (enemyType === 'demon')
+    const dropChance = ProgressionSystem.getRuneDropChance(this.currentFloor, isBoss)
 
     if (Math.random() < dropChance) {
       const runeId = this.inventorySystem.getRuneSystem().generateRandomRune()
       this.inventorySystem.addRune(runeId)
-      console.log(`✨ Enemy dropped rune: ${runeId}`)
+      const icon = isBoss ? '👑' : '✨'
+      console.log(`${icon} Enemy dropped rune: ${runeId} (${Math.round(dropChance * 100)}% chance)`)
     }
   }
 
@@ -1003,19 +990,16 @@ export class GameScene extends Phaser.Scene {
           }
         }
       } else if (room.type === 'boss') {
-        // Spawn boss enemy - 4-5x stronger than normal enemies
+        // Spawn boss enemy using ProgressionSystem configuration
         const bossX = room.centerX
         const bossY = room.centerY
 
-        // Calculate boss stats based on normal enemy baseline
-        const normalEnemyLevel = this.calculateEnemyLevel()
-        const bossLevel = Math.max(normalEnemyLevel + 1, this.currentFloor)
+        // Get boss configuration from ProgressionSystem
+        const bossLevel = ProgressionSystem.getBossLevel(this.currentFloor)
+        const bossConfig = ProgressionSystem.getBossConfig(this.currentFloor)
 
-        // Use demon as base type, but scale stats to be 4.5x normal enemy
+        // Use demon as base type, scaled using ProgressionSystem multipliers
         // Demon base: 100 HP, 15 damage, 8 defense
-        const bossHealthMultiplier = 4.5
-        const bossDamageMultiplier = 3.5  // Slightly less damage scaling for balance
-
         const config: EnemyConfig = {
           id: `boss_${index}`,
           name: '👑 BOSS',
@@ -1023,10 +1007,12 @@ export class GameScene extends Phaser.Scene {
           level: bossLevel,
           currentFloor: this.currentFloor,
           gridPosition: { x: bossX, y: bossY },
-          health: Math.floor(100 * bossHealthMultiplier),  // 450 HP base
-          damage: Math.floor(15 * bossDamageMultiplier),   // 52 damage base
+          health: Math.floor(100 * bossConfig.hpMultiplier),
+          damage: Math.floor(15 * bossConfig.damageMultiplier),
           defense: 8  // Keep defense same as demon
         }
+
+        console.log(`👑 Boss spawned: Level ${bossLevel}, HP ${config.health}, Damage ${config.damage}`)
 
         const enemy = new Enemy(this, config)
         this.enemies.push(enemy)
@@ -1037,87 +1023,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Calculate enemy level with falloff probability system (Item #10)
-   * Lower-level monsters become less common as floors progress
-   *
-   * Falloff formula: probability decreases as (floor - level) increases
-   * - L1 monsters: 90% floor 1, 40% floor 2, 10% floor 3, 0% floor 4+
-   * - L2 monsters: 10% floor 2, 60% floor 3, 30% floor 4, 10% floor 5
-   * - Ensures appropriate difficulty scaling
+   * Calculate enemy level using ProgressionSystem
+   * @deprecated Use ProgressionSystem.getRandomEnemyLevel() directly
    */
   private calculateEnemyLevel(): number {
-    const currentLevel = Math.min(Math.floor(this.currentFloor), 20)
-
-    // Build weighted level pool based on falloff probabilities
-    const levelWeights: { level: number; weight: number }[] = []
-
-    // Check each possible level (1 to currentLevel + 1)
-    for (let level = 1; level <= Math.min(currentLevel + 1, 20); level++) {
-      const floorDistance = this.currentFloor - level
-
-      // Calculate falloff probability
-      let weight = 0
-      if (floorDistance === 0) {
-        // Current floor level: highest probability (60%)
-        weight = 0.6
-      } else if (floorDistance === -1) {
-        // One level above current floor: medium probability (25%)
-        weight = 0.25
-      } else if (floorDistance === 1) {
-        // One level below: medium-low probability (30%)
-        weight = 0.3
-      } else if (floorDistance === 2) {
-        // Two levels below: low probability (10%)
-        weight = 0.1
-      } else if (floorDistance >= 3) {
-        // Three or more levels below: very rare (2%)
-        weight = 0.02
-      }
-
-      if (weight > 0) {
-        levelWeights.push({ level, weight })
-      }
-    }
-
-    // Special case for very early floors: always use level 1
-    if (this.currentFloor <= 1) {
-      return 1
-    }
-
-    // Weighted random selection
-    const totalWeight = levelWeights.reduce((sum, item) => sum + item.weight, 0)
-    let random = Math.random() * totalWeight
-
-    for (const { level, weight } of levelWeights) {
-      random -= weight
-      if (random <= 0) {
-        return level
-      }
-    }
-
-    // Fallback to current floor level
-    return currentLevel
+    return ProgressionSystem.getRandomEnemyLevel(this.currentFloor)
   }
 
+  /**
+   * Get random enemy type using ProgressionSystem
+   * @deprecated Use ProgressionSystem.getEnemyTypePool() directly
+   */
   private getRandomEnemyType(): string {
-    // Use only easy enemies for beginners
-    if (this.currentFloor <= 2) {
-      // K-2nd grade: Only the weakest enemies
-      const easyTypes = ['bat', 'slime'] // Bat has lowest health, slime has lowest damage
-      return easyTypes[Math.floor(Math.random() * easyTypes.length)]
-    } else if (this.currentFloor <= 4) {
-      // 3rd-4th grade: Add goblin (slightly stronger but manageable)
-      const beginnerTypes = ['bat', 'slime', 'goblin']
-      return beginnerTypes[Math.floor(Math.random() * beginnerTypes.length)]
-    } else if (this.currentFloor <= 6) {
-      // 5th-6th grade: Add skeleton (more defensive)
-      const intermediateTypes = ['bat', 'slime', 'goblin', 'skeleton']
-      return intermediateTypes[Math.floor(Math.random() * intermediateTypes.length)]
-    } else {
-      // 7th+ grade: Full enemy variety including tough orcs
-      const allTypes = ['goblin', 'skeleton', 'bat', 'slime', 'orc']
-      return allTypes[Math.floor(Math.random() * allTypes.length)]
-    }
+    const pool = ProgressionSystem.getEnemyTypePool(this.currentFloor)
+    return pool[Math.floor(Math.random() * pool.length)]
   }
 
   private showCombatPrompt(): void {
@@ -1233,9 +1152,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private pauseEnemiesForSpellCasting(): void {
-    // Pause enemies for grades K-4 during spell casting
-    if (this.currentFloor <= 4) {
-      console.log('⏸️ Pausing enemies for spell casting (Grade K-4)');
+    // Use ProgressionSystem to determine if enemies should be paused
+    if (ProgressionSystem.shouldPauseEnemiesDuringCasting(this.currentFloor)) {
+      const gradeName = ProgressionSystem.getLevelName(this.currentFloor);
+      console.log(`⏸️ Pausing enemies for spell casting (${gradeName})`);
       this.enemies.forEach(enemy => {
         enemy.stopCombat();
         // Stop any enemy tweens/animations
@@ -1245,9 +1165,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private resumeEnemiesAfterSpellCasting(): void {
-    // Resume enemies after spell casting (only for grades K-4 that were paused)
-    if (this.currentFloor <= 4 && this.isInCombat) {
-      console.log('▶️ Resuming enemies after spell casting (Grade K-4)');
+    // Resume enemies after spell casting (only if they were paused)
+    if (ProgressionSystem.shouldPauseEnemiesDuringCasting(this.currentFloor) && this.isInCombat) {
+      const gradeName = ProgressionSystem.getLevelName(this.currentFloor);
+      console.log(`▶️ Resuming enemies after spell casting (${gradeName})`);
       this.enemies.forEach(enemy => {
         if (enemy.isAliveStatus()) {
           enemy.startCombat(this.player.getGridPosition());
