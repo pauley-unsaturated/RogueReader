@@ -54,6 +54,31 @@ been
 has
 more
 
+# Missing Dolch Pre-Primer words
+can
+come
+go
+see
+me
+my
+we
+one
+two
+three
+jump
+help
+look
+away
+blue
+down
+find
+funny
+here
+little
+play
+where
+yellow
+
 # CVC review words
 cat
 dog

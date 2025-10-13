@@ -49,3 +49,11 @@ rip
 sip
 tip
 zip
+
+# Essential sight words
+and
+the
+to
+of
+for
+or

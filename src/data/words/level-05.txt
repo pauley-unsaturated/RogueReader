@@ -65,3 +65,20 @@ ask
 try
 put
 may
+
+# Common nouns for kids
+bird
+fish
+tree
+moon
+star
+rain
+snow
+home
+school
+book
+ball
+bike
+food
+milk
+water

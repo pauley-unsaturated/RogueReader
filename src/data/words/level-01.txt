@@ -2,6 +2,12 @@
 # Pre-K to Kindergarten level
 # Pattern: Consonant-Vowel-Consonant with "a"
 
+# Essential sight words (ultra-basic)
+a
+I
+am
+
+# CVC words with "a"
 cat
 bat
 hat

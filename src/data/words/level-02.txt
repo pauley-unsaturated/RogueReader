@@ -42,3 +42,11 @@ web
 hen
 gem
 end
+
+# Essential sight words
+is
+it
+in
+an
+as
+at
