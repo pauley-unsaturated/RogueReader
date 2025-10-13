@@ -1,120 +1,265 @@
-# TODO.md - RogueReader Next Steps
+# RogueReader - TODO List
 
-## ✅ Completed Features
-- [x] Core dungeon generation with procedural rooms
-- [x] Player movement and collision system
-- [x] Word management system with spaced repetition (SM-2 algorithm)
-- [x] Spell chain combat system with combo multipliers
-- [x] Enemy AI with different enemy types (goblin, skeleton, bat, slime, orc, demon)
-- [x] Word complexity damage scaling
-- [x] Combat UI with health bars and combo display
-- [x] Tutorial system with text-to-speech narration
-- [x] Game over and restart functionality
-- [x] Visual effects for spells and damage
+**Last Updated**: January 2025
+**Current Session**: Item #13 (Word List Audit) COMPLETE, Moving to Item #17 (Projectile System)
 
-## 🚀 Immediate Priorities
+---
 
-### 1. Speech Recognition Integration
-- [ ] Integrate Whisper API for real-time speech recognition
-- [ ] Replace auto-cast timer with actual voice input
-- [ ] Add pronunciation feedback system
-- [ ] Create visual microphone indicator
-- [ ] Handle speech recognition errors gracefully
+## ✅ COMPLETED - Current Session
 
-### 2. Treasure & Loot System
-- [ ] Implement treasure chests with word-lock mechanics
-- [ ] Create item system (weapons, armor, potions)
-- [ ] Add inventory management UI
-- [ ] Design rarity tiers tied to word difficulty
-- [ ] Implement item identification through reading
+### Item #13: Word List Verification
+**Status**: COMPLETE ✅
+**Commit**: `931c8cb` - "Complete word list audit and add 52 missing high-frequency words"
 
-### 3. Merchant & Economy
-- [ ] Create merchant NPCs in shop rooms
-- [ ] Implement word currency system (gold words)
-- [ ] Add haggling mechanic with persuasion words
-- [ ] Design shop UI with item descriptions
-- [ ] Create word banks for passive income
+**Results**:
+- ✅ Dolch Pre-Primer: 42.5% → 100% (COMPLETE!)
+- ✅ Common Nouns: 31.8% → 100% (ALL 22 PRESENT!)
+- ✅ Fry First 100: 72% → 75% (+3%)
+- ✅ Added 52 high-frequency words across levels 1-5
+- ✅ Created `tools/audit-word-lists.js` for future audits
 
-### 4. Boss Battles
-- [ ] Design multi-phase boss encounters
-- [ ] Implement boss-specific word challenges
-- [ ] Create vulnerability windows tied to reading speed
-- [ ] Add boss telegraphs with partial words to complete
-- [ ] Design unique rewards for boss defeats
+**Changes Made**:
+- Level 1 (+3): a, I, am
+- Level 2 (+6): is, it, in, an, as, at
+- Level 3 (+6): and, the, to, of, for, or
+- Level 4 (+23): ALL missing Dolch Pre-Primer words
+- Level 5 (+15): bird, fish, tree, moon, star, rain, snow, home, school, book, ball, bike, food, milk, water
 
-### 5. Power Progression
-- [ ] Implement spell evolution system
-- [ ] Create runic augmentation for equipment
-- [ ] Add companion spirits that bond through reading
-- [ ] Design meta-progression between runs
-- [ ] Implement spell unlock system
+---
 
-## 🎯 Medium-term Goals
+## 🚧 IN PROGRESS - Next Task
 
-### Content & Polish
-- [ ] Add more enemy types with unique behaviors
-- [ ] Create 20 dungeon levels with progressive difficulty
-- [ ] Implement actual word list files for all reading levels
-- [ ] Add more room types (library, altar, trap rooms)
-- [ ] Create dungeon themes (castle, cave, forest)
+### Item #17: Spell Projectile System with Element Effects
+**Status**: DESIGN PHASE 🎯
+**Priority**: HIGH (fixes AOE problem + adds visual feedback)
 
-### Audio System
-- [ ] Implement background music system
-- [ ] Add dynamic music layers based on combat state
-- [ ] Create sound effects for all actions
-- [ ] Add voice acting for characters
-- [ ] Implement audio feedback for reading success
+**Problem to Solve**:
+1. **AOE Issue**: Spells currently hit ALL nearby enemies instantly (too powerful)
+2. **No Visual Feedback**: Combat feels instant and weightless
+3. **Missing Element Types**: Fire/Ice/Lightning/Neutral have no visual distinction
 
-### Educational Features
-- [ ] Add word history and progress tracking
-- [ ] Create parent dashboard for monitoring
-- [ ] Implement adaptive difficulty based on performance
-- [ ] Add pronunciation guides and hints
-- [ ] Create achievement system for reading milestones
+**Proposed Architecture**:
 
-## 🔮 Long-term Vision
+#### New Components to Create:
 
-### Advanced Features
-- [ ] Multiplayer co-op mode for reading together
-- [ ] Daily challenges with leaderboards
-- [ ] Custom word list creation for teachers/parents
-- [ ] Story mode with narrative progression
-- [ ] Mini-games for specific reading skills
+**1. Projectile Class** (`src/entities/Projectile.ts`)
+- Extends Phaser.GameObjects.Sprite
+- Properties:
+  - `element: 'fire' | 'ice' | 'lightning' | 'neutral'`
+  - `damage: number`
+  - `targetEnemy: Enemy`
+  - `speed: number` (pixels/second)
+  - `particleEmitter: Phaser.GameObjects.Particles.ParticleEmitter`
+- Methods:
+  - `constructor(scene, x, y, targetEnemy, element, damage)`
+  - `update(delta)` - move toward target
+  - `onCollision()` - deal damage, trigger effects, destroy
+  - `createParticleTrail()` - element-specific visual trail
 
-### Platform Expansion
-- [ ] Mobile app version (iOS/Android)
-- [ ] Save game cloud sync
-- [ ] Offline mode with downloaded word lists
-- [ ] Controller support for console gaming
-- [ ] Accessibility features (dyslexia fonts, color blindness modes)
+**2. ProjectileManager** (`src/systems/ProjectileManager.ts`)
+- Manages all active projectiles
+- Properties:
+  - `activeProjectiles: Projectile[]`
+  - `scene: Phaser.Scene`
+- Methods:
+  - `fireProjectile(source, target, element, damage)` - create new projectile
+  - `update(delta)` - update all projectiles
+  - `checkCollisions()` - detect projectile-enemy collisions
+  - `clearAll()` - cleanup on floor transition
 
-### Academic Integration
-- [ ] Curriculum alignment with reading standards
-- [ ] Detailed progress reports for educators
-- [ ] Classroom mode for group learning
-- [ ] Integration with learning management systems
-- [ ] Research partnerships for efficacy studies
+**3. Element Visual Configs** (in ProjectileManager or separate config)
+```typescript
+const ELEMENT_CONFIGS = {
+  fire: {
+    color: 0xff4500,      // Orange-red
+    particleColor: 0xff8c00,
+    trailLength: 20,
+    speed: 400,
+    sprite: 'fireball'    // Or procedurally generated circle
+  },
+  ice: {
+    color: 0x00bfff,      // Deep sky blue
+    particleColor: 0x87ceeb,
+    trailLength: 15,
+    speed: 350,
+    sprite: 'iceball'
+  },
+  lightning: {
+    color: 0xffff00,      // Yellow
+    particleColor: 0xffffff,
+    trailLength: 10,
+    speed: 600,           // Fastest
+    sprite: 'lightningbolt'
+  },
+  neutral: {
+    color: 0x9370db,      // Medium purple (arcane)
+    particleColor: 0xda70d6,
+    trailLength: 15,
+    speed: 450,
+    sprite: 'arcaneball'
+  }
+};
+```
 
-## 🐛 Known Issues to Fix
-- [ ] Enemies sometimes spawn in walls
-- [ ] Combat UI can overlap with room labels
-- [ ] Word selection needs better difficulty curve
-- [ ] Performance optimization for many enemies
-- [ ] Better error handling for missing assets
+#### Files to Modify:
 
-## 💡 Ideas to Explore
-- Reading races against timer
-- Word puzzle rooms
-- Spell crafting by combining word parts
-- Reading comprehension challenges for bonus loot
-- Story snippets that unlock as you progress
-- Seasonal events with themed vocabulary
-- Guild system for collaborative learning
-- Pet system where creatures grow through reading
+**1. CombatSystem.ts** (lines 156-165)
+- **BEFORE**: `this.dealDamage(targetId, totalDamage, element)` (instant damage)
+- **AFTER**: `this.emit('projectileFired', { targetId, damage, element, sourcePosition })` (deferred damage)
+- Keep `dealDamage()` as public method for projectile collision callback
 
-## 📝 Notes
-- Focus on making reading feel like a superpower
-- Every mechanic should reinforce learning
-- Difficulty should adapt to keep flow state
-- Celebrate progress frequently
-- Make failure feel like learning, not punishment
+**2. GameScene.ts**
+- Import ProjectileManager
+- Create instance: `this.projectileManager = new ProjectileManager(this)`
+- Listen for `'projectileFired'` event from CombatSystem
+- Create projectile when event fires:
+  ```typescript
+  this.combatSystem.on('projectileFired', (data) => {
+    const target = this.enemies.find(e => e.id === data.targetId);
+    const playerPos = this.player.getPosition();
+    this.projectileManager.fireProjectile(playerPos, target, data.element, data.damage);
+  });
+  ```
+- Listen for projectile collision:
+  ```typescript
+  this.projectileManager.on('projectileHit', (data) => {
+    this.combatSystem.dealDamage(data.targetId, data.damage, data.element);
+  });
+  ```
+- Call `this.projectileManager.update(delta)` in GameScene.update()
+- Call `this.projectileManager.clearAll()` on floor transition
+
+**3. Player.ts** (optional)
+- Add `getWorldPosition()` helper method for projectile spawn point
+- Could add a "wand tip" offset for visual polish
+
+#### Implementation Steps:
+
+**Phase 1: Basic Projectile System**
+- [ ] Create Projectile class with simple circle sprite
+- [ ] Create ProjectileManager with basic firing/updating
+- [ ] Modify CombatSystem to emit 'projectileFired' instead of instant damage
+- [ ] Wire up GameScene event handlers
+- [ ] Test with single enemy (no particles yet)
+
+**Phase 2: Element Visual Effects**
+- [ ] Add particle emitters to Projectile
+- [ ] Implement ELEMENT_CONFIGS
+- [ ] Create element-specific trails
+- [ ] Test all 4 element types
+
+**Phase 3: Polish & Refinement**
+- [ ] Add impact effects (explosion, freeze, spark)
+- [ ] Add sound effects (whoosh, impact)
+- [ ] Projectile homing/arc trajectory (optional)
+- [ ] Multi-shot for combo spells (optional)
+
+#### Testing Checklist:
+- [ ] Single projectile fires from player to enemy
+- [ ] Projectile travels at correct speed
+- [ ] Damage applies on collision (not instantly)
+- [ ] Multiple projectiles don't interfere
+- [ ] Projectiles cleanup on enemy death
+- [ ] Projectiles cleanup on floor transition
+- [ ] All 4 element types have distinct visuals
+- [ ] Counter-attacks still work after projectile change
+
+---
+
+## 📋 REMAINING TASKS (from ERINS_FEEDBACK_TODOS.md)
+
+### Low Priority (Polish & Features)
+
+**Item #16: Wand Charging Visual Feedback**
+- Status: Not Started
+- Effort: High
+- Description: Animated wand effects for spell combos (1-5 words)
+
+**Item #18: Enemy Drops System**
+- Status: Not Started
+- Effort: Medium
+- Description: Health potions, food items (1/10 drop chance)
+
+**Item #19: Rune System**
+- Status: Not Started
+- Effort: High
+- Description: Multi-shot, lifesteal runes (increase max combo words)
+
+**Item #20: Game-Over Screen Polish**
+- Status: Not Started
+- Effort: Medium
+- Description: Stats display, particle effects, tombstone
+
+### Research
+
+**Item #22: Boss Room A* Distance**
+- Status: Not Started
+- Effort: Medium
+- Description: Investigate if Manhattan distance is sufficient for boss placement
+
+---
+
+## 🎯 IMMEDIATE NEXT STEPS
+
+1. **Complete Projectile System** (Item #17)
+   - Start with Phase 1 (basic projectile)
+   - Add element visuals in Phase 2
+   - Polish in Phase 3
+
+2. **Playtesting Session**
+   - Test all 14 completed items together
+   - Verify no regressions
+   - Get fresh user feedback
+
+3. **Consider Remaining Polish Items**
+   - Items #16, #18, #19, #20 are nice-to-have
+   - Projectile system is more impactful
+
+---
+
+## 📝 NOTES
+
+### Current Context
+- We just completed comprehensive word list audit
+- All critical/high/medium priority items are done except Item #13
+- Game is highly polished and playable
+- Projectile system will fix last major gameplay issue (AOE spam)
+
+### Design Decisions Confirmed
+- 40 floors total (transition levels every other floor)
+- Boss on every floor (not every 5th)
+- Monster counter-attacks after spell cast
+- Spell limit: 2 words (can grow with runes)
+- Timer disabled for floors 1-10 (tries mode)
+
+### Architecture Notes
+- CombatSystem handles damage calculation
+- GameScene handles visual effects and entity management
+- Projectiles bridge the gap between calculation and visual
+
+---
+
+## 🔗 RELATED FILES
+
+**Word Lists**:
+- `src/data/words/level-01.txt` through `level-20.txt`
+- `tools/audit-word-lists.js` (run with: `node tools/audit-word-lists.js`)
+
+**Combat System**:
+- `src/systems/CombatSystem.ts` (damage calculation, combo, elements)
+- `src/scenes/GameScene.ts` (combat orchestration, 2552 lines)
+- `src/entities/Player.ts` (player entity)
+- `src/entities/Enemy.ts` (enemy entity)
+
+**To Be Created**:
+- `src/entities/Projectile.ts` (new)
+- `src/systems/ProjectileManager.ts` (new)
+
+**Reference**:
+- `ERINS_FEEDBACK_TODOS.md` (full priority list)
+- `CHANGELOG.md` (implementation history)
+- `DESIGN.md` (game design decisions)
+
+---
+
+*Ready to continue: Start with Projectile class implementation (Phase 1)*
