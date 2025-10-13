@@ -191,11 +191,19 @@ export class StreamingSpeechService {
   async getRecordedAudio(): Promise<Blob | null> {
     console.log(`📋 Checking recorded audio: ${this.accumulatedAudio.length} chunks`)
 
-    // Give MediaRecorder a moment to finalize (Safari needs this)
-    await new Promise(resolve => setTimeout(resolve, 100))
+    // FIX: Longer delay for Safari to finalize audio chunks
+    // Safari can take 300-500ms to flush buffers and fire ondataavailable
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    // Check again after delay
+    console.log(`📋 After delay: ${this.accumulatedAudio.length} chunks`)
 
     if (this.accumulatedAudio.length === 0) {
-      console.log('⚠️ No audio chunks recorded')
+      console.log('⚠️ No audio chunks recorded - possible MediaRecorder issue')
+      console.log('💡 This can happen if:')
+      console.log('   1. Microphone permissions were denied')
+      console.log('   2. Recording stopped before first timeslice boundary')
+      console.log('   3. Browser-specific MediaRecorder bug')
       return null
     }
 
@@ -211,26 +219,84 @@ export class StreamingSpeechService {
     return audioBlob
   }
 
-  stopStreaming(): void {
-    console.log('🛑 Stopping stream')
+  async stopStreaming(): Promise<void> {
+    try {
+      console.log('🛑 Stopping stream')
 
-    if (this.chunkInterval) {
-      clearInterval(this.chunkInterval)
-      this.chunkInterval = null
-    }
+      if (this.chunkInterval) {
+        clearInterval(this.chunkInterval)
+        this.chunkInterval = null
+      }
 
-    if (this.mediaRecorder && this.isRecording) {
-      this.isRecording = false
-      // Force a final chunk by requesting data
-      this.mediaRecorder.requestData()
-      this.mediaRecorder.stop()
-    }
+      if (this.mediaRecorder && this.isRecording) {
+        this.isRecording = false
 
-    // Don't stop the stream if it's pre-warmed - we want to keep it alive
-    // Only stop it if we're fully cleaning up
-    if (!this.isPreWarmed && this.currentStream) {
-      this.currentStream.getTracks().forEach(track => track.stop())
-      this.currentStream = null
+        // FIX: Wait for onstop event to ensure all chunks are captured
+        // The onstop event is guaranteed to fire after all ondataavailable events
+        const stopPromise = new Promise<void>((resolve) => {
+          if (!this.mediaRecorder) {
+            resolve()
+            return
+          }
+
+          // Set up one-time stop handler with timeout to prevent hanging
+          const originalOnStop = this.mediaRecorder.onstop
+          let resolved = false
+
+          const stopHandler = () => {
+            if (resolved) return
+            resolved = true
+
+            console.log(`🏁 Recording stopped - total chunks: ${this.accumulatedAudio.length}`)
+            if (this.accumulatedAudio.length === 0) {
+              console.warn('🚨 MediaRecorder stopped but no audio chunks were captured!')
+            }
+            // Call original handler if it exists
+            if (originalOnStop && this.mediaRecorder) {
+              try {
+                originalOnStop.call(this.mediaRecorder, new Event('stop'))
+              } catch (err) {
+                console.warn('Error in original onstop handler:', err)
+              }
+            }
+            resolve()
+          }
+
+          this.mediaRecorder.onstop = stopHandler
+
+          // Safety timeout: resolve after 2 seconds even if onstop doesn't fire
+          setTimeout(() => {
+            if (!resolved) {
+              console.warn('⏱️  MediaRecorder stop timeout - resolving anyway')
+              stopHandler()
+            }
+          }, 2000)
+        })
+
+        // Force a final chunk by requesting data
+        console.log('📡 Requesting final audio data...')
+        this.mediaRecorder.requestData()
+
+        // Wait a moment for requestData to process (Safari needs this)
+        await new Promise(resolve => setTimeout(resolve, 100))
+
+        console.log('⏹️  Stopping MediaRecorder...')
+        this.mediaRecorder.stop()
+
+        // Wait for the stop event to complete
+        await stopPromise
+        console.log('✅ MediaRecorder fully stopped, chunks captured')
+      }
+
+      // Don't stop the stream if it's pre-warmed - we want to keep it alive
+      // Only stop it if we're fully cleaning up
+      if (!this.isPreWarmed && this.currentStream) {
+        this.currentStream.getTracks().forEach(track => track.stop())
+        this.currentStream = null
+      }
+    } catch (error) {
+      // Suppress errors for fire-and-forget cleanup calls
+      console.warn('⚠️ Error stopping stream (suppressed):', error)
     }
   }
 

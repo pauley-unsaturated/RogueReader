@@ -599,7 +599,11 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   }
 
   public handleWordSuccess(word: string, result: SpeechRecognitionResult): void {
-    if (!this.isActive) return;
+    // Defensive check: Don't process if dialog is being destroyed
+    if (!this.isActive || !this.scene || !this.scene.time) {
+      console.log('⚠️ Dialog already closed - skipping word success');
+      return;
+    }
 
     // Add to combo
     this.comboWords.push(word);
@@ -619,11 +623,14 @@ export class CastingDialog extends Phaser.GameObjects.Container {
 
     // AUTO-FIRE: If we've reached max spells, cast immediately
     if (this.comboWords.length >= this.maxSpells) {
-      this.instructionText.setText(`Spell Full! Casting x${this.comboWords.length}...`);
+      if (this.instructionText && this.instructionText.active) {
+        this.instructionText.setText(`Spell Full! Casting x${this.comboWords.length}...`);
+      }
 
       // Brief delay for visual feedback, then auto-cast
       this.scene.time.delayedCall(500, () => {
-        if (this.isActive) {
+        // Double-check we're still active before auto-casting
+        if (this.isActive && this.active) {
           console.log(`🎯 Auto-casting spell at max capacity (${this.maxSpells} words)`);
           this.options.onTimerEnd(this.comboResults);
           this.close();
@@ -763,6 +770,12 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   }
 
   public close(): void {
+    // Defensive check: Prevent double-close or close after destroy
+    if (!this.active || !this.scene || !this.scene.tweens) {
+      console.log('⚠️ Dialog already closed or scene invalid - skipping close animation');
+      return;
+    }
+
     if (this.timerTween) {
       this.timerTween.destroy();
     }
@@ -837,6 +850,12 @@ export class CastingDialog extends Phaser.GameObjects.Container {
   }
 
   public handleWordError(): void {
+    // Defensive check: Don't process if dialog is being destroyed
+    if (!this.active || !this.scene || !this.scene.time) {
+      console.log('⚠️ Dialog already closed - skipping error handling');
+      return;
+    }
+
     if (this.options.useTriesMode) {
       // Increment tries counter
       this.currentTries++;
@@ -847,7 +866,9 @@ export class CastingDialog extends Phaser.GameObjects.Container {
       if (this.currentTries >= maxTries) {
         // Out of tries - end the spell casting
         this.isActive = false;
-        this.instructionText.setText('Out of tries! Spell fizzled...');
+        if (this.instructionText && this.instructionText.active) {
+          this.instructionText.setText('Out of tries! Spell fizzled...');
+        }
 
         // End after brief pause
         this.scene.time.delayedCall(1000, () => {

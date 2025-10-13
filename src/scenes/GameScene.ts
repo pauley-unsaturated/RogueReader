@@ -49,6 +49,7 @@ export class GameScene extends Phaser.Scene {
   private recordingEndTimer: Phaser.Time.TimerEvent | null = null
   private isSpaceKeyDown: boolean = false // Track actual key state to prevent auto-repeat spam
   private escapeKeyPressed: boolean = false // Track ESC key state
+  private isDismissingDialog: boolean = false // Debounce flag to prevent multiple dismiss animations
   private currentPlayerRoomIndex: number | null = null // Track which room player is currently in
 
   constructor() {
@@ -321,17 +322,32 @@ export class GameScene extends Phaser.Scene {
       this.isSpaceKeyDown = true
       console.log('SPACE pressed (down)!')
 
+      // FIX: Discard interrupted recordings instead of processing them
       // Cancel any pending recording end delay if user presses spacebar again
       if (this.recordingEndTimer) {
-        console.log('📟 Cancelling recording end delay - user pressed spacebar again')
+        console.log('📟 Cancelling interrupted recording - discarding (anti-spam)')
         this.recordingEndTimer.destroy()
         this.recordingEndTimer = null
 
-        // IMPORTANT: Process the recording immediately when cancelled
-        // Otherwise we get stuck in recording state
-        if (this.isListeningForSpeech && this.castingDialog) {
-          console.log('⚡ Processing interrupted recording immediately')
-          this.stopRecordingAndProcess()
+        // Stop recording WITHOUT processing (prevents spam exploit)
+        if (this.isListeningForSpeech) {
+          this.isListeningForSpeech = false
+
+          // Stop streaming and discard audio
+          if (this.streamingService) {
+            this.streamingService.stopStreaming()
+          }
+
+          // Show brief error state to indicate recording was interrupted
+          if (this.castingDialog) {
+            this.castingDialog.stopRecording()
+            this.castingDialog.setRecordingState('error')
+            this.time.delayedCall(500, () => {
+              if (this.castingDialog) {
+                this.castingDialog.setRecordingState('ready')
+              }
+            })
+          }
         }
       }
 
@@ -456,6 +472,12 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-SHIFT', () => {
       // Don't process SHIFT if game is over
       if (this.isGameOver) return
+
+      // DEBOUNCE: Don't process if already dismissing to prevent zoom animation spam
+      if (this.isDismissingDialog) {
+        console.log('⏳ Already dismissing dialog - ignoring SHIFT')
+        return
+      }
 
       console.log('SHIFT pressed - closing dialog')
       if (this.castingDialog) {
@@ -1141,6 +1163,7 @@ export class GameScene extends Phaser.Scene {
     this.currentWord = null
     this.isSpaceKeyDown = false
     this.escapeKeyPressed = false
+    this.isDismissingDialog = false // Reset debounce flag
 
     // Clear spell casting flag to allow combat to restart if needed
     this.isSpellCasting = false
@@ -1162,6 +1185,8 @@ export class GameScene extends Phaser.Scene {
   private closeCastingDialog(): void {
     if (this.castingDialog) {
       console.log('🚪 Manually closing casting dialog')
+      // Set debounce flag to prevent multiple dismiss animations
+      this.isDismissingDialog = true
       // Use close() for animated removal (which calls destroy and onClose callback)
       this.castingDialog.close()
       // Note: The dialog's onClose callback will call cleanupCastingDialog()
@@ -1512,6 +1537,9 @@ export class GameScene extends Phaser.Scene {
     this.isListeningForSpeech = true
     this.currentWord = currentWord
 
+    // FIX: Track recording start time for minimum duration check
+    this.recordingStartTime = Date.now()
+
     // Update UI to show recording
     this.castingDialog.startRecording()
 
@@ -1543,15 +1571,71 @@ export class GameScene extends Phaser.Scene {
       return
     }
 
-    console.log('🔴 Stopping recording and processing...')
+    // FIX: Enforce spell cast cooldown to prevent rapid-fire exploits
+    const SPELL_CAST_COOLDOWN_MS = 400 // 400ms between word recognitions
+    const timeSinceLastCast = Date.now() - this.lastSpellCastTime
+
+    if (this.lastSpellCastTime > 0 && timeSinceLastCast < SPELL_CAST_COOLDOWN_MS) {
+      console.log(`🚫 Spell cast on cooldown (${timeSinceLastCast}ms < ${SPELL_CAST_COOLDOWN_MS}ms)`)
+      console.log('🚫 Rejecting rapid-fire attempt!')
+
+      // Clear listening flag
+      this.isListeningForSpeech = false
+
+      // Stop streaming
+      this.streamingService.stopStreaming()
+
+      if (this.castingDialog) {
+        this.castingDialog.stopRecording()
+        this.castingDialog.setRecordingState('error')
+        this.time.delayedCall(800, () => {
+          if (this.castingDialog) {
+            this.castingDialog.setRecordingState('ready')
+          }
+        })
+      }
+      return
+    }
+
+    // FIX: Check minimum recording duration to prevent spacebar spam exploit
+    const recordingDuration = Date.now() - this.recordingStartTime
+    const MIN_RECORDING_MS = 300 // Minimum 300ms to say a word
+
+    if (recordingDuration < MIN_RECORDING_MS) {
+      console.log(`⚠️ Recording too short (${recordingDuration}ms) - need at least ${MIN_RECORDING_MS}ms`)
+      console.log('🚫 Rejecting spacebar spam attempt!')
+
+      // IMPORTANT: Clear listening flag immediately
+      this.isListeningForSpeech = false
+
+      // Stop streaming
+      this.streamingService.stopStreaming()
+
+      if (this.castingDialog) {
+        this.castingDialog.stopRecording()
+        this.castingDialog.handleWordError()
+        this.castingDialog.setRecordingState('error')
+
+        // Return to ready state after brief error display
+        this.time.delayedCall(800, () => {
+          if (this.castingDialog) {
+            this.castingDialog.setRecordingState('ready')
+          }
+        })
+      }
+      return
+    }
+
+    console.log(`🔴 Stopping recording and processing (duration: ${recordingDuration}ms)...`)
 
     // IMPORTANT: Clear listening flag immediately to prevent stuck state
     this.isListeningForSpeech = false
 
     this.castingDialog.stopRecording()
 
-    // Stop streaming and get the accumulated audio
-    this.streamingService.stopStreaming()
+    // Stop streaming and wait for all audio chunks to be captured
+    // FIX: stopStreaming() is now async and waits for the onstop event
+    await this.streamingService.stopStreaming()
 
     // Now send the complete audio for transcription
     await this.processRecordedAudio()
@@ -1580,6 +1664,78 @@ export class GameScene extends Phaser.Scene {
         return
       }
 
+      // FIX: Basic audio sanity check (just ensure file isn't completely empty)
+      // Note: File size varies wildly by browser/codec, so we rely on duration check instead
+      const MIN_AUDIO_SIZE_BYTES = 100 // Just catch truly empty files
+
+      if (audioBlob.size < MIN_AUDIO_SIZE_BYTES) {
+        console.log(`⚠️ Audio completely empty (${audioBlob.size} bytes)`)
+        console.log('🚫 Rejecting empty audio blob')
+
+        if (this.castingDialog) {
+          this.castingDialog.handleWordError()
+          this.castingDialog.setRecordingState('error')
+          this.time.delayedCall(800, () => {
+            if (this.castingDialog) {
+              this.castingDialog.setRecordingState('ready')
+            }
+          })
+        }
+        this.isListeningForSpeech = false
+        return
+      }
+
+      console.log(`✓ Audio blob valid (${audioBlob.size} bytes)`)
+
+      // FIX #5: Audio energy analysis - detect silence vs actual speech
+      try {
+        const audioContext = new AudioContext()
+        const arrayBuffer = await audioBlob.arrayBuffer()
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
+        const channelData = audioBuffer.getChannelData(0)
+
+        // Calculate RMS (root mean square) energy
+        let sum = 0
+        for (let i = 0; i < channelData.length; i++) {
+          sum += channelData[i] * channelData[i]
+        }
+        const rms = Math.sqrt(sum / channelData.length)
+
+        // Threshold needs to be low enough to catch quiet speech but high enough to reject silence
+        // Lowered to 0.001 to be very permissive (catch only truly silent audio)
+        const MIN_RMS_ENERGY = 0.001  // Very low threshold for quiet speakers/distant mics
+
+        console.log(`📊 Audio RMS energy: ${rms.toFixed(6)} (min: ${MIN_RMS_ENERGY})`)
+
+        if (rms < MIN_RMS_ENERGY) {
+          console.log(`🔇 Audio energy too low (${rms.toFixed(6)}) - likely complete silence`)
+          console.log('🚫 Rejecting silent audio (no actual speech detected)')
+
+          // Clean up AudioContext
+          await audioContext.close()
+
+          if (this.castingDialog) {
+            this.castingDialog.handleWordError()
+            this.castingDialog.setRecordingState('error')
+            this.time.delayedCall(800, () => {
+              if (this.castingDialog) {
+                this.castingDialog.setRecordingState('ready')
+              }
+            })
+          }
+          this.isListeningForSpeech = false
+          return
+        }
+
+        console.log(`✓ Audio energy check passed (RMS: ${rms.toFixed(6)})`)
+
+        // Clean up AudioContext before continuing
+        await audioContext.close()
+      } catch (audioError) {
+        // If audio analysis fails, log but continue (don't block legitimate attempts)
+        console.warn('⚠️ Audio energy analysis failed, continuing anyway:', audioError)
+      }
+
       // Send to Whisper for transcription
       const result = await this.transcribeAudio(audioBlob, this.currentWord)
       this.handleDialogSpeechResult(result)
@@ -1605,7 +1761,10 @@ export class GameScene extends Phaser.Scene {
     formData.append('model', 'gpt-4o-mini-transcribe') // Use faster model
     formData.append('language', 'en')
     formData.append('response_format', 'json')
-    formData.append('prompt', `The user is saying the single word: ${targetWord}`)
+    // FIX #2: Remove prompt bias - don't tell Whisper the expected answer
+    // Previously: Told Whisper "The user is saying the single word: ${targetWord}"
+    // This made Whisper more likely to hallucinate the target from noise
+    formData.append('prompt', 'The user is saying a single English word clearly.')
 
     const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -1644,20 +1803,54 @@ export class GameScene extends Phaser.Scene {
     // Remove punctuation
     let cleaned = text.replace(/[!.,?;]/g, '').toLowerCase().trim()
 
-    // Handle repeated words
+    // Handle repeated words (e.g., "cat cat cat" → "cat")
     const words = cleaned.split(/\s+/)
-    if (words.every(w => w === targetWord.toLowerCase())) {
+    if (words.length > 0 && words.every(w => w === targetWord.toLowerCase())) {
       return targetWord.toLowerCase()
     }
 
-    // If target word appears anywhere, return it
-    if (words.includes(targetWord.toLowerCase())) {
-      return targetWord.toLowerCase()
-    }
+    // FIX #1: REMOVED auto-pass loophole
+    // Previously: if target word appeared ANYWHERE in transcription, we auto-converted to target
+    // This allowed "you know the cat" to pass as "cat" - major exploit!
+    // Now: Return first word only, let strict matching validate it
 
-    return cleaned
+    // Return first word only (ignore filler words/hallucinations)
+    return words[0] || cleaned
   }
 
+
+  /**
+   * Calculate Levenshtein distance between two strings
+   * Returns the minimum number of edits (insertions, deletions, substitutions) needed
+   */
+  private calculateLevenshteinDistance(str1: string, str2: string): number {
+    const len1 = str1.length
+    const len2 = str2.length
+
+    // Create 2D array for dynamic programming
+    const dp: number[][] = Array(len1 + 1).fill(null).map(() => Array(len2 + 1).fill(0))
+
+    // Initialize base cases
+    for (let i = 0; i <= len1; i++) dp[i][0] = i
+    for (let j = 0; j <= len2; j++) dp[0][j] = j
+
+    // Fill the dp table
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        if (str1[i - 1] === str2[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1] // No edit needed
+        } else {
+          dp[i][j] = Math.min(
+            dp[i - 1][j] + 1,     // Deletion
+            dp[i][j - 1] + 1,     // Insertion
+            dp[i - 1][j - 1] + 1  // Substitution
+          )
+        }
+      }
+    }
+
+    return dp[len1][len2]
+  }
 
   private async handleDialogSpeechResult(result: SpeechRecognitionResult): Promise<void> {
     this.isListeningForSpeech = false
@@ -1671,15 +1864,58 @@ export class GameScene extends Phaser.Scene {
     console.log(`  Confidence: ${result.confidence}`)
     console.log(`  Pronunciation: ${result.pronunciation_score}`)
 
-    // Check for match
-    const isMatch = spokenWord === targetWord ||
-                   spokenWord.includes(targetWord) ||
-                   result.confidence > 0.7
+    // FIX #4: Reject multi-word transcriptions (catches Whisper hallucinating filler words)
+    const wordCount = spokenWord.split(/\s+/).filter(w => w.length > 0).length
+    if (wordCount > 1) {
+      console.log(`⚠️ Rejected multi-word transcription: "${spokenWord}" (${wordCount} words)`)
+      console.log('🚫 Expected single word only - likely hallucination or background noise')
+
+      if (this.castingDialog) {
+        this.castingDialog.handleWordError()
+        this.castingDialog.setRecordingState('error')
+        this.time.delayedCall(800, () => {
+          if (this.castingDialog) {
+            this.castingDialog.setRecordingState('ready')
+          }
+        })
+      }
+      return
+    }
+
+    // FIX: Strict word matching to prevent spacebar spam exploit
+    // Check for exact match or very close match (scaled by word length)
+    const isExactMatch = spokenWord === targetWord
+    const editDistance = this.calculateLevenshteinDistance(spokenWord, targetWord)
+
+    // FIX #3: Scale Levenshtein threshold by word length
+    // Very short words (1-2 letters) require exact match
+    // 3-5 letter words allow 1 character difference (balances accuracy with Whisper's phonetic near-misses)
+    // "bed" → "bad" is acceptable (pronunciation variation), but random words unlikely to match
+    const maxEditDistance = targetWord.length <= 2 ? 0 :  // Exact match only for 1-2 letter words
+                            targetWord.length <= 5 ? 1 :  // 1 typo allowed for 3-5 letter words
+                            2                              // 2 typos allowed for long words
+
+    const isCloseMatch = editDistance <= maxEditDistance
+    // Lowered from 0.85 to 0.4 since we have multiple other protections
+    // (duration, energy, multi-word, scaled Levenshtein, no prompt bias)
+    // Near-misses like "bad" for "bed" often have lower confidence but are legitimate
+    const hasMinConfidence = result.confidence >= 0.4
+
+    // Word must match (exactly or within distance) AND have reasonable confidence
+    // Multiple other layers prevent abuse (duration, energy, multi-word, etc.)
+    const isMatch = (isExactMatch || isCloseMatch) && hasMinConfidence
+
+    console.log(`  Match check: exact=${isExactMatch}, close=${isCloseMatch} (distance=${editDistance}, max=${maxEditDistance}), confident=${hasMinConfidence}`)
+    console.log(`  → Result: ${isMatch ? 'PASS ✓' : 'FAIL ✗'}`)
 
     if (isMatch && !result.isError && !result.isTimeout) {
       // Success! Add to combo
       this.comboWords.push(this.currentWord)
       this.pendingComboResults.push(result)
+
+      // FIX: Update cooldown timestamp on successful word recognition
+      this.lastSpellCastTime = Date.now()
+
       this.castingDialog.handleWordSuccess(this.currentWord, result)
 
       // Get next word (use boss word selection if fighting a boss)
@@ -1775,6 +2011,8 @@ export class GameScene extends Phaser.Scene {
     // CRITICAL: Close the dialog UI before cleanup
     if (this.castingDialog) {
       console.log('🚪 Closing casting dialog UI')
+      // Set debounce flag to prevent multiple dismiss animations
+      this.isDismissingDialog = true
       this.castingDialog.close()  // This animates out and destroys the dialog
       // Note: The dialog's onClose callback will call cleanupCastingDialog()
 
@@ -2290,6 +2528,8 @@ export class GameScene extends Phaser.Scene {
 
   private lastPlayerPosition: { x: number; y: number } = { x: -1, y: -1 }
   private lastManaRegenTime: number = 0
+  private recordingStartTime: number = 0 // Track when recording started for minimum duration check
+  private lastSpellCastTime: number = 0 // Track last spell cast for cooldown (anti-spam)
 
   update(time: number, _delta: number): void {
     // Don't update if game is over or paused
