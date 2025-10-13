@@ -185,22 +185,31 @@ export class ProgressionSystem {
 
   /**
    * Get recommended enemy count for a room based on floor
-   * Scales with difficulty but accounts for beginner-friendly pacing
+   * Scales gradually across 40 floors for smooth difficulty progression
+   *
+   * Monster Density Scaling (Item #11 follow-up):
+   * - Starts with 1-2 enemies at floor 1 (very beginner friendly)
+   * - Gradually increases to 3-5 enemies at floor 40 (challenging endgame)
+   * - Smooth progression prevents sudden difficulty spikes
    */
   public static getEnemyCountForFloor(floor: number): { min: number; max: number } {
-    if (floor <= 2) {
-      // K-2nd grade: Very few enemies
-      return { min: 1, max: 2 };
-    } else if (floor <= 4) {
-      // 3rd-4th grade: Slightly more
-      return { min: 2, max: 3 };
-    } else if (floor <= 10) {
-      // 5th-10th grade: Progressive increase
-      return { min: 2, max: 4 };
-    } else {
-      // Advanced: More challenging encounters
-      return { min: 3, max: 5 };
-    }
+    // Cap floor at maximum
+    const cappedFloor = Math.max(1, Math.min(floor, this.MAX_FLOOR));
+
+    // Calculate progression factor (0.0 at floor 1, 1.0 at floor 40)
+    const progression = (cappedFloor - 1) / (this.MAX_FLOOR - 1);
+
+    // Smooth scaling for min enemies: 1 → 3
+    // Linear progression with rounding ensures steady increase
+    const minRange = 2; // Range to scale (3 - 1 = 2)
+    const min = Math.max(1, Math.min(3, Math.floor(1 + progression * minRange + 0.5)));
+
+    // Smooth scaling for max enemies: 2 → 5
+    // Linear progression with rounding ensures steady increase
+    const maxRange = 3; // Range to scale (5 - 2 = 3)
+    const max = Math.max(2, Math.min(5, Math.floor(2 + progression * maxRange + 0.5)));
+
+    return { min, max };
   }
 
   /**
@@ -239,11 +248,16 @@ export class ProgressionSystem {
 
   /**
    * Calculate boss level based on floor
-   * Bosses are typically current floor level + 1
+   * Bosses use floor's primary reading level + 1, capped at MAX_READING_LEVEL
+   *
+   * Note: Unlike regular enemies (which use falloff probability), bosses always
+   * use the floor's primary reading level to ensure consistent challenge
    */
   public static getBossLevel(floor: number): number {
-    const normalLevel = this.getRandomEnemyLevel(floor);
-    return Math.max(normalLevel + 1, Math.min(floor, this.MAX_READING_LEVEL));
+    const floorLevel = this.getWordLevelForFloor(floor);
+    const bossLevel = floorLevel + 1;
+    // Always cap at MAX_READING_LEVEL
+    return Math.min(bossLevel, this.MAX_READING_LEVEL);
   }
 
   /**

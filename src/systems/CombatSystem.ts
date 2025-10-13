@@ -171,7 +171,65 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
       multiplier: this.comboState.multiplier
     });
 
+    // Monster Counter-Attacks (Item #11 follow-up)
+    // Enemies within range counter-attack after player casts spell
+    this.triggerCounterAttacks();
+
     return spell;
+  }
+
+  /**
+   * Trigger counter-attacks from enemies within range
+   * Adds strategic depth: players must consider enemy positioning when casting
+   *
+   * Design (from ERINS_FEEDBACK_TODOS.md):
+   * - Monsters attack AFTER player fires spell
+   * - Only attack if in range
+   * - Not all monsters are ranged/magic users
+   * - Creates risk/reward: "Do I target the close goblin or the far archer?"
+   */
+  private triggerCounterAttacks(): void {
+    if (this.enemies.size === 0) return;
+
+    const counterAttackers: CombatEntity[] = [];
+
+    // Determine which enemies counter-attack based on range
+    this.enemies.forEach(enemy => {
+      const distance = Math.abs(enemy.gridPosition.x - this.player.gridPosition.x) +
+                      Math.abs(enemy.gridPosition.y - this.player.gridPosition.y);
+
+      // Counter-attack range rules:
+      // - Within 3 tiles: Always counter-attack (melee range)
+      // - Within 6 tiles: 50% chance (some enemies have ranged abilities)
+      // - Beyond 6 tiles: No counter-attack (too far)
+      if (distance <= 3) {
+        counterAttackers.push(enemy);
+      } else if (distance <= 6) {
+        // 50% chance for ranged counter-attack
+        if (Math.random() < 0.5) {
+          counterAttackers.push(enemy);
+        }
+      }
+    });
+
+    // Emit counter-attack event for each enemy
+    // GameScene will handle applying damage to player
+    counterAttackers.forEach(enemy => {
+      const distance = Math.abs(enemy.gridPosition.x - this.player.gridPosition.x) +
+                      Math.abs(enemy.gridPosition.y - this.player.gridPosition.y);
+
+      // Damage scales inversely with distance (closer = more dangerous)
+      const distanceFactor = Math.max(0.5, 1 - (distance / 10));
+      const counterDamage = Math.floor(enemy.stats.damage * distanceFactor);
+
+      this.emit('enemyCounterAttack', {
+        enemyId: enemy.id,
+        enemyName: enemy.name,
+        damage: counterDamage,
+        distance: distance,
+        isRanged: distance > 3
+      });
+    });
   }
 
   public defendWithWord(word: string): boolean {

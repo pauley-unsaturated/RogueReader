@@ -765,6 +765,22 @@ export class GameScene extends Phaser.Scene {
       this.gameOver()
     })
 
+    // Listen for enemy counter-attacks (Monster Counter-Attacks: Item #11 follow-up)
+    this.combatSystem.on('enemyCounterAttack', (data: any) => {
+      console.log(`⚔️ ${data.enemyName} counter-attacks! (${data.isRanged ? 'ranged' : 'melee'}, distance: ${data.distance}, damage: ${data.damage})`)
+
+      // Apply damage to both combat system AND player entity
+      this.combatSystem.takeDamage(data.damage)
+      const isDead = this.player.takeDamage(data.damage) // This emits 'update-health' event for UI
+
+      // TODO: Add visual feedback (damage numbers, screen shake, flash effect)
+      // For now, just log and apply damage
+
+      if (isDead) {
+        console.log('💀 Player defeated by counter-attack!')
+      }
+    })
+
     // Listen for enemy attacks
     this.events.on('enemyAttack', (data: any) => {
       // Update BOTH combat system AND player entity for proper HP bar display

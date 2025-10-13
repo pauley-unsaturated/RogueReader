@@ -209,37 +209,71 @@ describe('ProgressionSystem - Enemy Scaling', () => {
     });
   });
 
-  describe('getEnemyCountForFloor()', () => {
-    it('should return 1-2 enemies for floors 1-2 (K-2nd grade)', () => {
-      const count1 = ProgressionSystem.getEnemyCountForFloor(1);
-      const count2 = ProgressionSystem.getEnemyCountForFloor(2);
-
-      expect(count1).toEqual({ min: 1, max: 2 });
-      expect(count2).toEqual({ min: 1, max: 2 });
+  describe('getEnemyCountForFloor() - Monster Density Scaling', () => {
+    it('should start with 1-2 enemies at floor 1 (beginner friendly)', () => {
+      const count = ProgressionSystem.getEnemyCountForFloor(1);
+      expect(count).toEqual({ min: 1, max: 2 });
     });
 
-    it('should return 2-3 enemies for floors 3-4 (3rd-4th grade)', () => {
-      const count3 = ProgressionSystem.getEnemyCountForFloor(3);
-      const count4 = ProgressionSystem.getEnemyCountForFloor(4);
-
-      expect(count3).toEqual({ min: 2, max: 3 });
-      expect(count4).toEqual({ min: 2, max: 3 });
+    it('should end with 3-5 enemies at floor 40 (challenging endgame)', () => {
+      const count = ProgressionSystem.getEnemyCountForFloor(40);
+      expect(count).toEqual({ min: 3, max: 5 });
     });
 
-    it('should return 2-4 enemies for floors 5-10', () => {
-      const count5 = ProgressionSystem.getEnemyCountForFloor(5);
-      const count10 = ProgressionSystem.getEnemyCountForFloor(10);
+    it('should gradually increase enemy count across 40 floors', () => {
+      const floor1 = ProgressionSystem.getEnemyCountForFloor(1);
+      const floor11 = ProgressionSystem.getEnemyCountForFloor(11);
+      const floor21 = ProgressionSystem.getEnemyCountForFloor(21);
+      const floor31 = ProgressionSystem.getEnemyCountForFloor(31);
+      const floor40 = ProgressionSystem.getEnemyCountForFloor(40);
 
-      expect(count5).toEqual({ min: 2, max: 4 });
-      expect(count10).toEqual({ min: 2, max: 4 });
+      // Min should gradually increase: 1 → 3
+      expect(floor1.min).toBe(1);
+      expect(floor11.min).toBeGreaterThan(floor1.min);  // Floor 11 should have min=2
+      expect(floor21.min).toBeGreaterThanOrEqual(floor11.min);  // Should be >= 2
+      expect(floor31.min).toBeGreaterThan(floor21.min);  // Floor 31 should have min=3
+      expect(floor40.min).toBe(3);
+
+      // Max should gradually increase: 2 → 5
+      expect(floor1.max).toBe(2);
+      expect(floor11.max).toBeGreaterThan(floor1.max);  // Should have progressed
+      expect(floor21.max).toBeGreaterThan(floor11.max);  // Should continue increasing
+      expect(floor31.max).toBeGreaterThanOrEqual(floor21.max);  // Should be >= 4
+      expect(floor40.max).toBe(5);
     });
 
-    it('should return 3-5 enemies for advanced floors (11+)', () => {
-      const count15 = ProgressionSystem.getEnemyCountForFloor(15);
-      const count20 = ProgressionSystem.getEnemyCountForFloor(20);
+    it('should never have min > max', () => {
+      for (let floor = 1; floor <= 40; floor++) {
+        const count = ProgressionSystem.getEnemyCountForFloor(floor);
+        expect(count.min).toBeLessThanOrEqual(count.max);
+      }
+    });
 
-      expect(count15).toEqual({ min: 3, max: 5 });
-      expect(count20).toEqual({ min: 3, max: 5 });
+    it('should provide smooth progression without sudden jumps', () => {
+      let previousMin = 0;
+      let previousMax = 0;
+
+      for (let floor = 1; floor <= 40; floor++) {
+        const count = ProgressionSystem.getEnemyCountForFloor(floor);
+
+        // Changes should be gradual (max 1 enemy difference between floors)
+        if (floor > 1) {
+          expect(Math.abs(count.min - previousMin)).toBeLessThanOrEqual(1);
+          expect(Math.abs(count.max - previousMax)).toBeLessThanOrEqual(1);
+        }
+
+        previousMin = count.min;
+        previousMax = count.max;
+      }
+    });
+
+    it('should cap enemy counts at floor 40 values for higher floors', () => {
+      const floor40 = ProgressionSystem.getEnemyCountForFloor(40);
+      const floor50 = ProgressionSystem.getEnemyCountForFloor(50);
+      const floor100 = ProgressionSystem.getEnemyCountForFloor(100);
+
+      expect(floor50).toEqual(floor40);
+      expect(floor100).toEqual(floor40);
     });
   });
 
@@ -304,29 +338,39 @@ describe('ProgressionSystem - Boss Configuration', () => {
   });
 
   describe('getBossLevel()', () => {
-    it('should be at least current floor level', () => {
-      for (let floor = 1; floor <= 20; floor++) {
+    it('should be at least current reading level (Item #11: 2 floors per level)', () => {
+      for (let floor = 1; floor <= 40; floor++) {
         const bossLevel = ProgressionSystem.getBossLevel(floor);
-        expect(bossLevel).toBeGreaterThanOrEqual(floor);
+        const readingLevel = ProgressionSystem.getWordLevelForFloor(floor);
+        // Boss level should be reading level or higher
+        expect(bossLevel).toBeGreaterThanOrEqual(readingLevel);
       }
     });
 
     it('should not exceed max reading level', () => {
       const bossLevel25 = ProgressionSystem.getBossLevel(25);
       expect(bossLevel25).toBeLessThanOrEqual(20);
+
+      const bossLevel40 = ProgressionSystem.getBossLevel(40);
+      expect(bossLevel40).toBeLessThanOrEqual(20);
+
+      const bossLevel100 = ProgressionSystem.getBossLevel(100);
+      expect(bossLevel100).toBeLessThanOrEqual(20);
     });
 
-    it('should typically be floor level or higher', () => {
+    it('should typically be reading level + 1', () => {
       // Statistical test over many samples
       let higherCount = 0;
       const samples = 100;
 
       for (let i = 0; i < samples; i++) {
-        const bossLevel = ProgressionSystem.getBossLevel(10);
-        if (bossLevel >= 10) higherCount++;
+        const bossLevel = ProgressionSystem.getBossLevel(20);
+        const readingLevel = ProgressionSystem.getWordLevelForFloor(20);
+        // Boss should typically be reading level or higher
+        if (bossLevel >= readingLevel) higherCount++;
       }
 
-      // Boss should always be >= floor level
+      // Boss should always be >= reading level
       expect(higherCount).toBe(samples);
     });
   });
