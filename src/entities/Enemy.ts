@@ -15,6 +15,7 @@ export interface EnemyConfig {
   attackSpeed?: number; // milliseconds between attacks
   movementSpeed?: number; // tiles per second
   aggroRange?: number; // tiles
+  spawnRoom?: { x: number; y: number; width: number; height: number }; // Boss room containment
 }
 
 export class Enemy extends Phaser.GameObjects.Container {
@@ -29,6 +30,10 @@ export class Enemy extends Phaser.GameObjects.Container {
   private isAlive: boolean = true;
   private isInCombat: boolean = false;
   private moveTimer?: Phaser.Time.TimerEvent;
+
+  // Status effect visuals (Phase 3)
+  private burnEffect?: Phaser.GameObjects.Graphics;
+  private slowEffect?: Phaser.GameObjects.Graphics;
 
   constructor(scene: Phaser.Scene, config: EnemyConfig) {
     const worldX = config.gridPosition.x * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2;
@@ -420,7 +425,37 @@ export class Enemy extends Phaser.GameObjects.Container {
     const newX = this.gridPosition.x + moveX;
     const newY = this.gridPosition.y + moveY;
 
-    // Check if move is valid (would need collision check with dungeon)
+    // BUG FIX: Check if move is valid (collision with walls/doors)
+    // Get dungeon from scene (GameScene has it as public property)
+    const gameScene = this.scene as any;
+    if (!gameScene.dungeon || !gameScene.tiles) {
+      // No dungeon data available, don't move
+      return;
+    }
+
+    const dungeon = gameScene.dungeon;
+
+    // Check bounds
+    if (newX < 0 || newY < 0 || newX >= dungeon.width || newY >= dungeon.height) {
+      return; // Out of bounds
+    }
+
+    // Check if tile is walkable (not wall or door)
+    const tile = gameScene.tiles[newY][newX];
+    if (!tile || tile.type === 'wall' || tile.type === 'door') {
+      return; // Blocked by wall or door
+    }
+
+    // BOSS CONTAINMENT: Prevent bosses from leaving their spawn room
+    if (this.config.spawnRoom) {
+      const room = this.config.spawnRoom;
+      if (newX < room.x || newX >= room.x + room.width ||
+          newY < room.y || newY >= room.y + room.height) {
+        return; // Boss trying to leave spawn room - block movement
+      }
+    }
+
+    // Move is valid
     this.moveToGrid(newX, newY);
   }
 
@@ -469,6 +504,10 @@ export class Enemy extends Phaser.GameObjects.Container {
     return this.isInCombat;
   }
 
+  public getAggroRange(): number {
+    return this.config.aggroRange || 5; // Default 5 tiles, bosses use 8
+  }
+
   public update(_playerPosition: { x: number; y: number }): void {
     if (!this.isAlive) return;
 
@@ -477,5 +516,110 @@ export class Enemy extends Phaser.GameObjects.Container {
     // GameScene handles:
     // - Starting combat when enemies are within COMBAT_RANGE (5 tiles)
     // - Ending combat when enemies are beyond DISENGAGE_RANGE (10 tiles)
+  }
+
+  /**
+   * Phase 3: Show visual burn effect (fire DoT)
+   */
+  public showBurnEffect(): void {
+    if (this.burnEffect) return // Already showing
+
+    this.burnEffect = this.scene.add.graphics()
+    this.add(this.burnEffect)
+    this.burnEffect.setDepth(1) // Above sprite
+
+    // Animate flickering flame particles
+    const animateBurn = () => {
+      if (!this.burnEffect || !this.isAlive) return
+
+      this.burnEffect.clear()
+
+      // Draw 3 flame particles at random positions around enemy
+      for (let i = 0; i < 3; i++) {
+        const offsetX = Phaser.Math.Between(-8, 8)
+        const offsetY = Phaser.Math.Between(-12, -4)
+        const size = Phaser.Math.Between(2, 4)
+
+        // Gradient effect: yellow core, orange-red outer
+        this.burnEffect.fillStyle(0xffff00, 0.8) // Yellow core
+        this.burnEffect.fillCircle(offsetX, offsetY, size)
+
+        this.burnEffect.fillStyle(0xff4500, 0.6) // Orange-red outer
+        this.burnEffect.fillCircle(offsetX, offsetY + 1, size + 1)
+      }
+
+      // Repeat animation every 100ms for flickering effect
+      this.scene.time.delayedCall(100, animateBurn)
+    }
+
+    animateBurn()
+  }
+
+  /**
+   * Phase 3: Hide visual burn effect
+   */
+  public hideBurnEffect(): void {
+    if (this.burnEffect) {
+      this.burnEffect.destroy()
+      this.burnEffect = undefined
+    }
+  }
+
+  /**
+   * Phase 3: Show visual slow effect (ice crystals)
+   */
+  public showSlowEffect(): void {
+    if (this.slowEffect) return // Already showing
+
+    this.slowEffect = this.scene.add.graphics()
+    this.add(this.slowEffect)
+    this.slowEffect.setDepth(1) // Above sprite
+
+    // Draw ice crystals around enemy
+    this.slowEffect.lineStyle(2, 0x00bfff, 0.8) // Ice blue
+
+    // Draw 4 ice crystals in cardinal directions
+    const crystals = [
+      { x: -10, y: 0 },   // Left
+      { x: 10, y: 0 },    // Right
+      { x: 0, y: -10 },   // Top
+      { x: 0, y: 10 }     // Bottom
+    ]
+
+    crystals.forEach(pos => {
+      // Draw crystal as 4-pointed star
+      this.slowEffect!.beginPath()
+      this.slowEffect!.moveTo(pos.x, pos.y - 4)      // Top point
+      this.slowEffect!.lineTo(pos.x + 1, pos.y - 1)  // Top-right
+      this.slowEffect!.lineTo(pos.x + 4, pos.y)      // Right point
+      this.slowEffect!.lineTo(pos.x + 1, pos.y + 1)  // Bottom-right
+      this.slowEffect!.lineTo(pos.x, pos.y + 4)      // Bottom point
+      this.slowEffect!.lineTo(pos.x - 1, pos.y + 1)  // Bottom-left
+      this.slowEffect!.lineTo(pos.x - 4, pos.y)      // Left point
+      this.slowEffect!.lineTo(pos.x - 1, pos.y - 1)  // Top-left
+      this.slowEffect!.closePath()
+      this.slowEffect!.strokePath()
+    })
+
+    // Add slow pulse animation
+    this.scene.tweens.add({
+      targets: this.slowEffect,
+      alpha: 0.4,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    })
+  }
+
+  /**
+   * Phase 3: Hide visual slow effect
+   */
+  public hideSlowEffect(): void {
+    if (this.slowEffect) {
+      this.scene.tweens.killTweensOf(this.slowEffect)
+      this.slowEffect.destroy()
+      this.slowEffect = undefined
+    }
   }
 }

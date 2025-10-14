@@ -35,6 +35,141 @@ Every mechanic reinforces reading practice while maintaining compelling roguelik
 - **Time Pressure**: Words fade if not read quickly enough
 - **Reading Benefit**: Better readers can execute complex tactical patterns
 
+## Elemental Wizard System & Projectile Mechanics
+
+### Core Design Philosophy
+The elemental system adds visual excitement and strategic depth while keeping reading as the primary mechanic. All wizard types are equally viable, offering texture rather than power imbalance.
+
+### Four Schools of Magic
+
+#### Fire Wizard (The Scorcher)
+- **Projectile Visual**: Fireball with ember trail
+- **Base Stats**: 110% damage, medium projectile speed
+- **Special Trait**: Burn damage over time (2 damage/sec for 3 seconds)
+- **Projectile Behavior**: Slight arc trajectory with particle trail
+- **Color Palette**: Orange/Red/Yellow (#FF4500, #FF8C00, #FFD700)
+- **Strategic Niche**: Best against high-HP enemies (bosses)
+
+#### Ice Wizard (The Frostweaver)
+- **Projectile Visual**: Ice shard with crystalline particles
+- **Base Stats**: 100% damage, fast projectile speed
+- **Special Trait**: 30% chance to slow enemies (50% movement for 2 seconds)
+- **Projectile Behavior**: Direct line trajectory, leaves frost particles
+- **Color Palette**: Light Blue/White/Cyan (#00BFFF, #87CEEB, #E0FFFF)
+- **Strategic Niche**: Best for crowd control (multiple enemies)
+
+#### Lightning Wizard (The Stormcaller)
+- **Projectile Visual**: Lightning bolt with electric sparks
+- **Base Stats**: 90% damage, instant hit speed
+- **Special Trait**: 20% chance to chain to nearby enemy (50% damage)
+- **Projectile Behavior**: Instant zig-zag path to target
+- **Color Palette**: Yellow/White/Purple (#FFFF00, #FFFFFF, #9370DB)
+- **Strategic Niche**: Best for clearing weak enemies quickly
+
+#### Arcane Wizard (The Scholar)
+- **Projectile Visual**: Purple orb with rotating mystical runes
+- **Base Stats**: 100% damage, medium speed
+- **Special Trait**: +5% damage per letter beyond 3 (rewards vocabulary)
+- **Projectile Behavior**: Spiral trajectory with magical symbols
+- **Color Palette**: Purple/Pink/Violet (#9370DB, #DA70D6, #8B008B)
+- **Strategic Niche**: Best for advanced readers (scales with word complexity)
+
+### Wizard Selection Mechanics
+
+**Initial Implementation (Random)**:
+- Element randomly assigned at game start
+- Consistent throughout the run for learning curve
+- Future: Character select screen with descriptions
+
+**Future Character Progression**:
+- Unlock new wizard types through achievements
+- Cosmetic variations (robes, hats, wands) as rewards
+- Meta-progression: Slight stat bonuses for mastered elements
+
+### Projectile System Architecture
+
+#### Visual Progression by Combo Level
+Projectiles become more visually impressive as combo multiplier increases:
+- **Combo 1x**: Basic colored projectile
+- **Combo 1.5x**: Add particle trail
+- **Combo 2x**: Glow effect + larger size
+- **Combo 2.5x**: Enhanced particles + impact effect
+- **Combo 3x+**: Full spectacle with screen effects
+
+#### Projectile Behavior Rules
+1. **Automatic Targeting**: Projectile fires at nearest enemy
+2. **Travel Time**: Creates anticipation (except Lightning's instant hit)
+3. **Collision Detection**: Precise hit detection for fair gameplay
+4. **Multiple Projectiles**: Can have multiple in flight simultaneously
+5. **Cleanup**: Projectiles destroyed on enemy death or floor transition
+
+### Rune-Element Interaction Matrix
+
+Runes have similar but differentiated effects based on wizard element:
+
+| Rune Type | Fire Effect | Ice Effect | Lightning Effect | Arcane Effect |
+|-----------|------------|------------|-----------------|---------------|
+| **Blast** (Suffix) | Explosion radius +50% | Freeze splash (slows nearby) | Chain +1 enemy guaranteed | Knockback enemies |
+| **Echo** (Core) | Leaves fire trail on ground | Creates temporary ice walls | Projectile forks to 2 targets | Duplicates projectile |
+| **Power** (Core) | +40% burn tick damage | +40% slow duration | +40% chain damage | +40% complexity bonus |
+| **Shield** (Suffix) | Fire shield (damages melee attackers) | Ice armor (25% damage reduction) | Lightning aura (mini-stuns) | Magic barrier (reflects 1 projectile) |
+| **Heal** (Suffix) | Instant heal + cauterize | Heal over time + frost armor | Instant mana restore | Bonus XP from combat |
+| **Big** (Prefix) | Meteor-sized projectile | Glacier chunk | Thunder from above | Massive orb with gravitational pull |
+
+### Implementation Phases
+
+#### Phase 1: Basic Projectile System (Current Priority)
+- Simple colored circles as projectiles
+- Movement from player to target enemy
+- Damage applied on collision (not instant)
+- Element type stored but not fully differentiated
+
+#### Phase 2: Element Differentiation
+- Unique visual sprites per element
+- Implement special traits (burn, slow, chain, complexity bonus)
+- Basic particle effects using Phaser's particle system
+- Element-specific impact sounds
+
+#### Phase 3: Full Visual Polish
+- Advanced particle effects with custom shaders
+- Screen shake on powerful impacts
+- Environmental reactions (scorch marks, ice patches)
+- Combo-based visual scaling system
+- Victory flourishes unique per element
+
+### Wizard Asset Requirements
+
+Each wizard type requires these sprite sheets:
+- **Base Sprite**: 64x64 pixels, 4 directions (N, S, E, W)
+- **Idle Animation**: 4 frames per direction
+- **Casting Animation**: 6 frames (wind-up, cast, recovery)
+- **Walking Animation**: 8 frames per direction
+- **Hit/Damage Animation**: 3 frames
+- **Victory Pose**: 4 frames celebration
+
+**Robe Designs**:
+- Fire: Red/orange with flame trim patterns
+- Ice: Blue/white with snowflake embroidery
+- Lightning: Yellow/purple with lightning bolt designs
+- Arcane: Purple/violet with mystical star patterns
+
+### Balance Philosophy
+
+**Core Principle**: All wizards deal identical base damage from reading words correctly. Elemental differences provide tactical variety without creating "wrong" choices.
+
+**Damage Calculation**:
+```
+Total Damage = (Base Word Damage) × (Combo Multiplier) × (Element Modifier) × (Rune Bonuses)
+```
+
+**Element Modifiers Are Situational**:
+- Fire excels in long fights (burn stacks)
+- Ice excels with groups (crowd control)
+- Lightning excels at cleanup (chain hits)
+- Arcane excels with vocabulary mastery (scaling bonus)
+
+This ensures the reading mechanic remains paramount while adding replayability through varied playstyles.
+
 ## Treasure/Inventory System
 
 ### Option 1: Enchanted Loot Library

@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import { SpeechRecognitionResult } from '../services/SpeechRecognitionService';
+import { ElementType } from '../entities/Projectile';
 
 export interface CastingDialogOptions {
   spellName: string;
@@ -7,6 +8,7 @@ export interface CastingDialogOptions {
   maxTries?: number; // Optional - only used for tries mode
   useTriesMode?: boolean; // If true, use tries instead of timer
   maxSpells?: number; // Maximum number of spells in combo (default 2, can grow with runes)
+  wizardElement?: ElementType; // Wizard element type for spell color matching
   onTimerEnd: (results: SpeechRecognitionResult[]) => void;
   onClose?: () => void;
 }
@@ -47,6 +49,24 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     scene.add.existing(this);
     this.setDepth(1000);
     this.setScrollFactor(0);
+  }
+
+  /**
+   * Get hex color string for wizard element type
+   */
+  private getElementColor(element?: ElementType): string {
+    switch (element) {
+      case 'fire':
+        return '#ff4500';   // Orange-red
+      case 'ice':
+        return '#00bfff';   // Deep sky blue
+      case 'lightning':
+        return '#ffff00';   // Yellow
+      case 'arcane':
+        return '#9370db';   // Medium purple
+      default:
+        return '#00bfff';   // Default to blue if not specified
+    }
   }
 
   private createDialog(): void {
@@ -90,9 +110,11 @@ export class CastingDialog extends Phaser.GameObjects.Container {
     // Spell name (smaller, secondary importance)
     // Adjust vertical positions for smaller panel
     const topY = -panelHeight / 2 + 40;
+    // Get element color for spell name
+    const elementColor = this.getElementColor(this.options.wizardElement);
     this.spellNameText = this.scene.add.text(0, topY, this.options.spellName.toUpperCase(), {
       fontSize: '20px',  // Reduced from 24px
-      color: '#00bfff',
+      color: elementColor,
       fontFamily: 'Arial',
       stroke: '#000000',
       strokeThickness: 2

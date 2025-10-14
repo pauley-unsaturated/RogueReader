@@ -93,6 +93,7 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
     isCriticalHit?: boolean,
     spellingPenalty?: number
   }): SpellCast {
+    console.log(`⚡ CombatSystem.castSpell() called with word="${word}", targetId=${targetId}, enemies=${this.enemies.size}`);
     const now = Date.now();
 
     // Update combo state
@@ -153,15 +154,30 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
     this.comboState.lastCastTime = now;
     this.updateComboMultiplier();
 
-    // Apply damage to target
+    // Fire projectile toward target (replaces instant damage)
+    // GameScene will create the visual projectile and apply damage on collision
+    let targetEnemyId: string | null = null;
+
     if (targetId && this.enemies.has(targetId)) {
-      this.dealDamage(targetId, totalDamage, element);
+      targetEnemyId = targetId;
     } else if (this.enemies.size > 0) {
       // Auto-target nearest enemy
       const nearestEnemy = this.getNearestEnemy();
       if (nearestEnemy) {
-        this.dealDamage(nearestEnemy.id, totalDamage, element);
+        targetEnemyId = nearestEnemy.id;
       }
+    }
+
+    if (targetEnemyId) {
+      console.log(`🔮 CombatSystem.castSpell() emitting projectileFired: target=${targetEnemyId}, damage=${totalDamage}, element=${element}`);
+      // Emit projectile fired event - GameScene handles visual projectile creation
+      this.emit('projectileFired', {
+        targetId: targetEnemyId,
+        damage: totalDamage,
+        element,
+        wordLength: word.length,
+        comboLevel: this.comboState.count
+      });
     }
 
     // Emit spell cast event
@@ -326,7 +342,12 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
     return 'neutral';
   }
 
-  private dealDamage(targetId: string, damage: number, element?: string): void {
+  /**
+   * Deal damage to an enemy
+   * Now PUBLIC so GameScene can call it when projectiles hit
+   * Previously was private and called directly from castSpell
+   */
+  public dealDamage(targetId: string, damage: number, element?: string): void {
     const enemy = this.enemies.get(targetId);
     if (!enemy) return;
 

@@ -4,6 +4,8 @@ import { DungeonGenerator, Dungeon } from '@/systems/DungeonGenerator'
 import { AssetLoader } from '@/systems/AssetLoader'
 import { GAME_CONFIG } from '@/config/GameConfig'
 import { CombatSystem } from '@/systems/CombatSystem'
+import { ProjectileManager } from '@/systems/ProjectileManager'
+import { ElementType } from '@/entities/Projectile'
 import { CombatUI } from '@/components/CombatUI'
 import { CastingDialog } from '@/components/CastingDialog'
 import { Enemy, EnemyConfig } from '@/entities/Enemy'
@@ -27,6 +29,7 @@ export class GameScene extends Phaser.Scene {
   private currentFloor: number = 1
   private tiles: Phaser.GameObjects.Rectangle[][] = []
   private combatSystem!: CombatSystem
+  private projectileManager!: ProjectileManager
   private combatUI!: CombatUI
   private castingDialog: CastingDialog | null = null
   private enemies: Enemy[] = []
@@ -78,6 +81,13 @@ export class GameScene extends Phaser.Scene {
     // Initialize systems
     this.wordManager = new WordManager()
     this.combatSystem = new CombatSystem()
+
+    // Initialize ProjectileManager with random wizard element (for now)
+    const wizardElements: ElementType[] = ['fire', 'ice', 'lightning', 'arcane']
+    const randomElement = wizardElements[Math.floor(Math.random() * wizardElements.length)]
+    this.projectileManager = new ProjectileManager(this, randomElement)
+    console.log(`🧙 Starting game as ${randomElement} wizard!`)
+
     this.currencySystem = new CurrencySystem()
     this.inventorySystem = new InventorySystem()
 
@@ -351,6 +361,8 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
+      console.log(`🎮 SPACEBAR pressed: isInCombat=${this.isInCombat}, hasDialog=${!!this.castingDialog}, enemies=${this.enemies.length}`)
+
       if (this.isInCombat) {
         if (this.castingDialog) {
           // Start recording if dialog is open and not already recording
@@ -367,6 +379,7 @@ export class GameScene extends Phaser.Scene {
         }
       } else {
         // Non-combat interaction
+        console.log(`🚪 Not in combat (isInCombat=false) - trying door interaction`)
         this.interact()
       }
     })
@@ -722,7 +735,9 @@ export class GameScene extends Phaser.Scene {
     })
 
     this.combatSystem.on('combatEnded', (data: any) => {
-      console.log('📢 combatEnded event received')
+      console.log(`🏁 combatEnded event received - isInCombat=${this.isInCombat}`)
+      console.log(`  Total enemies in scene: ${this.enemies.length}`)
+      console.log(`  Alive enemies in scene: ${this.enemies.filter(e => e.isAliveStatus()).length}`)
       this.hideCombatPrompt()
 
       // Restore some mana after combat
@@ -736,6 +751,7 @@ export class GameScene extends Phaser.Scene {
 
       // Check if current room is truly cleared (room-based, not proximity-based)
       const currentRoom = this.currentPlayerRoomIndex
+      console.log(`  Current room index: ${currentRoom}`)
 
       if (currentRoom !== null) {
         const room = this.dungeon.rooms[currentRoom]
@@ -748,25 +764,29 @@ export class GameScene extends Phaser.Scene {
                  pos.y >= room.y && pos.y < room.y + room.height
         })
 
-        console.log(`📊 Room ${currentRoom} clear check: ${roomEnemies.length} alive enemies remain`)
+        console.log(`📊 Room ${currentRoom} clear check: ${roomEnemies.length} alive enemies remain in room`)
 
         if (roomEnemies.length > 0) {
-          console.log(`⚔️ More enemies in room ${currentRoom} (${roomEnemies.length}) - continuing combat`)
+          console.log(`⚔️ More enemies in room ${currentRoom} (${roomEnemies.length}) - RESTARTING COMBAT`)
           // Re-register room enemies with combat system
           roomEnemies.forEach(enemy => {
+            console.log(`  Re-adding enemy: ${enemy.id}`)
             this.combatSystem.addEnemy(enemy.getCombatEntity())
             enemy.startCombat(this.player.getGridPosition())
           })
           this.isInCombat = true
+          console.log(`  isInCombat set to TRUE`)
         } else {
           console.log(`✅ Room ${currentRoom} cleared - unlocking doors`)
           this.isInCombat = false
+          console.log(`  isInCombat set to FALSE`)
           this.unlockRoomDoors(currentRoom)
         }
       } else {
         // Player is in corridor, just end combat
         console.log('✅ Combat ended in corridor area')
         this.isInCombat = false
+        console.log(`  isInCombat set to FALSE`)
       }
     })
 
@@ -781,6 +801,144 @@ export class GameScene extends Phaser.Scene {
       if (enemy) {
         enemy.takeDamage(data.damage)
       }
+    })
+
+    // Listen for projectile fired event (NEW: Projectile System)
+    this.combatSystem.on('projectileFired', (data: any) => {
+      console.log(`🎯 GameScene received projectileFired event: target=${data.targetId}, damage=${data.damage}, element=${data.element}`);
+      const targetEnemy = this.enemies.find(e => e.getCombatEntity().id === data.targetId)
+      if (!targetEnemy) {
+        console.warn(`⚠️ Projectile target not found: ${data.targetId}`)
+        return
+      }
+
+      console.log(`✅ Found target enemy at position (${targetEnemy.x}, ${targetEnemy.y})`);
+
+      // Get player world position for projectile source
+      const playerWorldPos = { x: this.player.x, y: this.player.y }
+
+      console.log(`🧙 Player position: (${playerWorldPos.x}, ${playerWorldPos.y})`);
+
+      this.projectileManager.fireProjectile({
+        targetEnemy,
+        damage: data.damage,
+        element: data.element,
+        sourcePosition: playerWorldPos,
+        comboLevel: data.comboLevel,
+        wordLength: data.wordLength
+      })
+    })
+
+    // Listen for projectile hit event (NEW: Projectile System)
+    this.events.on('projectileHit', (data: any) => {
+      console.log(`💥 Projectile hit ${data.targetId} for ${data.damage} ${data.element} damage`)
+
+      // Apply damage through CombatSystem (which emits damageDealt event)
+      this.combatSystem.dealDamage(data.targetId, data.damage, data.element)
+
+      // Apply element-specific traits (burn, slow, chain, etc.)
+      const targetEnemy = this.enemies.find(e => e.id === data.targetId)
+      if (targetEnemy) {
+        this.projectileManager.applyElementTrait(targetEnemy, data.element, data.damage)
+      }
+    })
+
+    // Listen for camera shake on impact (Phase 3)
+    this.events.on('impactCameraShake', (data: any) => {
+      const intensity = data.intensity || 2
+      this.cameras.main.shake(100, intensity / 1000) // duration=100ms, intensity scaled
+    })
+
+    // Listen for burn effect application (Fire element trait)
+    this.projectileManager.on('applyBurn', (data: any) => {
+      const targetEnemy = this.enemies.find(e => e.id === data.targetId)
+      if (!targetEnemy || !targetEnemy.isAliveStatus()) return
+
+      console.log(`🔥 Applying burn to ${data.targetId}: ${data.tickDamage} damage/sec for ${data.duration}ms`)
+
+      // Show burn visual effect (Phase 3)
+      targetEnemy.showBurnEffect()
+
+      // Apply damage every second for duration
+      const tickInterval = 1000 // 1 second
+      const totalTicks = Math.floor(data.duration / tickInterval)
+      let currentTick = 0
+
+      const burnTimer = this.time.addEvent({
+        delay: tickInterval,
+        callback: () => {
+          if (!targetEnemy.isAliveStatus()) {
+            burnTimer.destroy()
+            targetEnemy.hideBurnEffect()
+            return
+          }
+
+          currentTick++
+          targetEnemy.takeDamage(data.tickDamage)
+          console.log(`🔥 Burn tick ${currentTick}/${totalTicks}: ${data.tickDamage} damage`)
+
+          if (currentTick >= totalTicks) {
+            burnTimer.destroy()
+            targetEnemy.hideBurnEffect()
+            console.log(`🔥 Burn effect expired on ${data.targetId}`)
+          }
+        },
+        loop: true
+      })
+    })
+
+    // Listen for slow effect application (Ice element trait)
+    this.projectileManager.on('applySlow', (data: any) => {
+      const targetEnemy = this.enemies.find(e => e.id === data.targetId)
+      if (!targetEnemy || !targetEnemy.isAliveStatus()) return
+
+      console.log(`❄️ Applying slow to ${data.targetId}: ${data.slowFactor * 100}% speed for ${data.duration}ms`)
+
+      // Show slow visual effect (Phase 3)
+      targetEnemy.showSlowEffect()
+
+      // Store the slow state to affect enemy movement
+      // Note: Movement speed modification will be handled in enemy movement logic
+      // For now, we have the visual indicator tracking the debuff
+
+      // Clear slow effect after duration
+      this.time.delayedCall(data.duration, () => {
+        if (targetEnemy.isAliveStatus()) {
+          targetEnemy.hideSlowEffect()
+          console.log(`❄️ Slow effect expired on ${data.targetId}`)
+        }
+      })
+    })
+
+    // Listen for chain lightning effect (Lightning element trait)
+    this.projectileManager.on('applyChain', (data: any) => {
+      // Find nearby enemies within maxRange
+      const sourcePos = data.sourcePosition
+      const nearbyEnemies = this.enemies.filter(enemy => {
+        if (!enemy.isAliveStatus() || enemy.id === data.sourceId) return false
+
+        const enemyPos = enemy.getGridPosition()
+        const distance = Math.abs(enemyPos.x - sourcePos.x) + Math.abs(enemyPos.y - sourcePos.y)
+        return distance <= data.maxRange
+      })
+
+      if (nearbyEnemies.length === 0) {
+        console.log(`⚡ No nearby enemies for chain lightning`)
+        return
+      }
+
+      // Chain to random nearby enemy
+      const chainTarget = Phaser.Utils.Array.GetRandom(nearbyEnemies)
+      console.log(`⚡ Chain lightning jumping to ${chainTarget.id} for ${data.chainDamage} damage`)
+
+      // Visual chain lightning arc (Phase 3)
+      const sourceEnemy = this.enemies.find(e => e.id === data.sourceId)
+      if (sourceEnemy) {
+        this.drawChainLightningArc(sourceEnemy, chainTarget)
+      }
+
+      // Apply chain damage
+      chainTarget.takeDamage(data.chainDamage)
     })
 
     this.combatSystem.on('playerDefeated', () => {
@@ -817,7 +975,10 @@ export class GameScene extends Phaser.Scene {
     // Listen for enemy deaths
     this.events.on('enemyDied', (data: any) => {
       console.log(`💀 enemyDied event received for ${data.id}`)
+      console.log(`  Alive enemies remaining: ${this.enemies.filter(e => e.isAliveStatus()).length}`)
+      console.log(`  isInCombat BEFORE removeEnemy: ${this.isInCombat}`)
       this.combatSystem.removeEnemy(data.id)
+      console.log(`  isInCombat AFTER removeEnemy: ${this.isInCombat}`)
 
       // Find the enemy to get its details for rewards
       const enemy = this.enemies.find(e => e.id === data.id)
@@ -887,6 +1048,7 @@ export class GameScene extends Phaser.Scene {
     // End combat if any
     this.isInCombat = false
     this.combatSystem.clearAll()
+    this.projectileManager.clearAll() // NEW: Clear all active projectiles
 
     // Regenerate dungeon for new floor
     this.generateDungeon()
@@ -1048,7 +1210,9 @@ export class GameScene extends Phaser.Scene {
           gridPosition: { x: bossX, y: bossY },
           health: Math.floor(100 * bossConfig.hpMultiplier),
           damage: Math.floor(15 * bossConfig.damageMultiplier),
-          defense: 8  // Keep defense same as demon
+          defense: 8,  // Keep defense same as demon
+          aggroRange: 8,  // Bosses are more aggressive (default is 5)
+          spawnRoom: { x: room.x, y: room.y, width: room.width, height: room.height }  // Boss containment
         }
 
         console.log(`👑 Boss spawned: Level ${bossLevel}, HP ${config.health}, Damage ${config.damage}`)
@@ -1458,6 +1622,7 @@ export class GameScene extends Phaser.Scene {
       duration: spellConfig.duration,
       maxTries: spellConfig.maxTries,
       useTriesMode: spellConfig.useTriesMode,
+      wizardElement: this.projectileManager.getWizardElement(), // Pass wizard element for color matching
       onTimerEnd: (results) => this.handleComboComplete(results),
       onClose: () => {
         // Resume enemies when dialog actually closes (for early grades)
@@ -2567,6 +2732,9 @@ export class GameScene extends Phaser.Scene {
       enemy.update(this.player.getGridPosition())
     })
 
+    // Update projectiles (NEW: Projectile System)
+    this.projectileManager.update(time, _delta)
+
     // Update combat system with player position
     this.combatSystem.updatePlayerPosition(this.player.gridX, this.player.gridY)
 
@@ -2602,8 +2770,17 @@ export class GameScene extends Phaser.Scene {
           })
 
           if (roomEnemies.length > 0) {
-            console.log(`🔒 Entered ${room.type} room ${newRoomIndex} with ${roomEnemies.length} enemies - LOCKING DOORS`)
+            console.log(`🔒 Entered ${room.type} room ${newRoomIndex} with ${roomEnemies.length} enemies - LOCKING DOORS AND STARTING COMBAT`)
             this.lockRoomDoors(newRoomIndex)
+
+            // BUG FIX: Start combat with room enemies when entering boss/combat room
+            roomEnemies.forEach(enemy => {
+              console.log(`  ⚔️ Registering enemy with CombatSystem: ${enemy.id}`)
+              this.combatSystem.addEnemy(enemy.getCombatEntity())
+              enemy.startCombat(this.player.getGridPosition())
+            })
+            this.isInCombat = true
+            console.log(`  isInCombat set to TRUE - combat started!`)
           } else {
             console.log(`✅ Entered ${room.type} room ${newRoomIndex} but it's already cleared`)
           }
@@ -2612,7 +2789,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Check for combat proximity
-    const COMBAT_RANGE = 5
     const DISENGAGE_RANGE = 10  // Larger range to prevent flickering in/out of combat
 
     // Get all alive enemies and their distances
@@ -2621,7 +2797,8 @@ export class GameScene extends Phaser.Scene {
     const nearbyEnemies = aliveEnemies.filter(enemy => {
       const pos = enemy.getGridPosition()
       const distance = Math.abs(pos.x - this.player.gridX) + Math.abs(pos.y - this.player.gridY)
-      return distance <= COMBAT_RANGE && !enemy.isInCombatStatus()  // Only non-combat enemies
+      const aggroRange = enemy.getAggroRange() // Use enemy's individual aggro range (bosses: 8, regular: 5)
+      return distance <= aggroRange && !enemy.isInCombatStatus()  // Only non-combat enemies
     })
 
     const farCombatEnemies = aliveEnemies.filter(enemy => {
@@ -2727,5 +2904,61 @@ export class GameScene extends Phaser.Scene {
         })
       }
     };
+  }
+
+  /**
+   * Phase 3: Draw visual chain lightning arc between enemies
+   */
+  private drawChainLightningArc(sourceEnemy: Enemy, targetEnemy: Enemy): void {
+    // Create lightning arc graphics
+    const arc = this.add.graphics()
+    arc.setDepth(51) // Above projectiles
+
+    // Get world positions of source and target
+    const sourcePos = { x: sourceEnemy.x, y: sourceEnemy.y }
+    const targetPos = { x: targetEnemy.x, y: targetEnemy.y }
+
+    // Draw jagged lightning bolt
+    arc.lineStyle(3, 0xffff00, 1) // Yellow lightning
+
+    // Start from source
+    arc.beginPath()
+    arc.moveTo(sourcePos.x, sourcePos.y)
+
+    // Create jagged segments
+    const segments = 8
+    const dx = (targetPos.x - sourcePos.x) / segments
+    const dy = (targetPos.y - sourcePos.y) / segments
+
+    for (let i = 1; i < segments; i++) {
+      const x = sourcePos.x + (dx * i) + Phaser.Math.Between(-8, 8)
+      const y = sourcePos.y + (dy * i) + Phaser.Math.Between(-8, 8)
+      arc.lineTo(x, y)
+    }
+
+    // End at target
+    arc.lineTo(targetPos.x, targetPos.y)
+    arc.strokePath()
+
+    // Add glow effect
+    arc.lineStyle(6, 0xffff00, 0.3) // Outer glow
+    arc.beginPath()
+    arc.moveTo(sourcePos.x, sourcePos.y)
+    for (let i = 1; i < segments; i++) {
+      const x = sourcePos.x + (dx * i) + Phaser.Math.Between(-8, 8)
+      const y = sourcePos.y + (dy * i) + Phaser.Math.Between(-8, 8)
+      arc.lineTo(x, y)
+    }
+    arc.lineTo(targetPos.x, targetPos.y)
+    arc.strokePath()
+
+    // Fade out and destroy
+    this.tweens.add({
+      targets: arc,
+      alpha: 0,
+      duration: 200,
+      ease: 'Power2.out',
+      onComplete: () => arc.destroy()
+    })
   }
 }
