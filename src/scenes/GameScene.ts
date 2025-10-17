@@ -20,6 +20,7 @@ import { ProgressionSystem } from '@/systems/ProgressionSystem'
 import { CurrencySystem } from '@/systems/CurrencySystem'
 import { InventorySystem } from '@/systems/InventorySystem'
 import { HotBarUI } from '@/components/HotBarUI'
+import { DropManager } from '@/systems/DropManager'
 
 export class GameScene extends Phaser.Scene {
   private player!: Player
@@ -39,6 +40,7 @@ export class GameScene extends Phaser.Scene {
   private currencySystem!: CurrencySystem
   private inventorySystem!: InventorySystem
   private hotBarUI!: HotBarUI
+  private dropManager!: DropManager
   private currentWord: string | null = null
   private comboWords: string[] = []
   private pendingComboResults: SpeechRecognitionResult[] = []
@@ -90,6 +92,7 @@ export class GameScene extends Phaser.Scene {
 
     this.currencySystem = new CurrencySystem()
     this.inventorySystem = new InventorySystem()
+    this.dropManager = new DropManager(this)
 
     // Load saved data
     this.currencySystem.load()
@@ -378,9 +381,26 @@ export class GameScene extends Phaser.Scene {
           this.showCastingDialog()
         }
       } else {
-        // Non-combat interaction
-        console.log(`🚪 Not in combat (isInCombat=false) - trying door interaction`)
-        this.interact()
+        // Non-combat interaction: Check for item pickup first, then doors
+
+        // Get player position
+        const playerPos = this.player.getGridPosition()
+        const playerWorldPos = {
+          x: playerPos.x * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2,
+          y: playerPos.y * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2
+        }
+
+        // Try to collect item at player position (items take priority over doors)
+        const hasNearbyItem = this.dropManager.hasItemNearPosition(playerWorldPos.x, playerWorldPos.y, 24)
+
+        if (hasNearbyItem) {
+          console.log(`📦 Item nearby - collecting with spacebar`)
+          this.dropManager.tryCollectItemAtPosition(playerWorldPos.x, playerWorldPos.y)
+        } else {
+          // No items nearby - try door interaction
+          console.log(`🚪 Not in combat (isInCombat=false) - trying door interaction`)
+          this.interact()
+        }
       }
     })
 
@@ -637,32 +657,6 @@ export class GameScene extends Phaser.Scene {
       ease: 'Power2.out',
       onComplete: () => rewardText.destroy()
     })
-  }
-
-  private checkConsumableDrop(enemyType: string): void {
-    const isBoss = (enemyType === 'demon')
-    const dropChance = ProgressionSystem.getConsumableDropChance(this.currentFloor, isBoss)
-
-    if (Math.random() < dropChance) {
-      const consumable = this.inventorySystem.getConsumableSystem().generateRandomConsumable(this.currentFloor)
-      if (consumable) {
-        this.inventorySystem.addConsumable(consumable, 1)
-        const icon = isBoss ? '👑' : '🎁'
-        console.log(`${icon} Enemy dropped consumable: ${consumable} (${Math.round(dropChance * 100)}% chance)`)
-      }
-    }
-  }
-
-  private checkRuneDrop(enemyType: string): void {
-    const isBoss = (enemyType === 'demon')
-    const dropChance = ProgressionSystem.getRuneDropChance(this.currentFloor, isBoss)
-
-    if (Math.random() < dropChance) {
-      const runeId = this.inventorySystem.getRuneSystem().generateRandomRune()
-      this.inventorySystem.addRune(runeId)
-      const icon = isBoss ? '👑' : '✨'
-      console.log(`${icon} Enemy dropped rune: ${runeId} (${Math.round(dropChance * 100)}% chance)`)
-    }
   }
 
   private interact(): void {
@@ -985,22 +979,28 @@ export class GameScene extends Phaser.Scene {
       console.log(`  Found enemy in array: ${!!enemy}`)
       if (enemy) {
         const config = (enemy as any).config // Access enemy config
+        const isBoss = data.id.startsWith('boss_')
 
-        // Generate currency reward
+        // Spawn loot drops at enemy position
+        const enemyWorldPos = {
+          x: data.position.x * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2,
+          y: data.position.y * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2
+        }
+        this.dropManager.spawnDropsFromEnemy(
+          enemyWorldPos.x,
+          enemyWorldPos.y,
+          config.type,
+          isBoss
+        )
+
+        // Legacy currency system (keep for now until inventory integration complete)
         const goldReward = CurrencySystem.generateEnemyReward(
           config.level,
           config.type,
           this.currentFloor
         )
-
         this.currencySystem.addGoldWords(goldReward, `${config.type} defeat`)
         this.showCurrencyReward(goldReward)
-
-        // Chance for consumable drops
-        this.checkConsumableDrop(config.type)
-
-        // Chance for rune drops (higher chance for bosses)
-        this.checkRuneDrop(config.type)
       }
 
       // Check if this was a boss death
@@ -1049,6 +1049,7 @@ export class GameScene extends Phaser.Scene {
     this.isInCombat = false
     this.combatSystem.clearAll()
     this.projectileManager.clearAll() // NEW: Clear all active projectiles
+    this.dropManager.cleanup() // Clear all drops on floor
 
     // Regenerate dungeon for new floor
     this.generateDungeon()
@@ -2715,6 +2716,9 @@ export class GameScene extends Phaser.Scene {
       }
       this.lastManaRegenTime = time
     }
+
+    // Update drop manager (gold magnetism, drop aging, etc.)
+    this.dropManager.update(_delta)
 
     // Safety check: Clear stuck spell casting flag if no dialog exists
     if (this.isSpellCasting && !this.castingDialog && !this.isInCombat) {

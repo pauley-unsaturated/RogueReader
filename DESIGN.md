@@ -587,6 +587,200 @@ Advanced SAT-style mechanics will be implemented once core systems are proven an
 - **Volume Sliders**: Separate controls for music, SFX, voice
 - **Audio Descriptions**: Optional descriptive audio for visual elements
 
+## Art Assets Required for Production
+
+This section catalogs all visual assets needed for full production of RogueReader. Assets are organized by priority and implementation phase.
+
+### Loot Drop System Assets (Phase 1 - Current Priority)
+
+#### Gold Coins
+- **Format**: Sprite sheet with animation frames
+- **Specifications**:
+  - Size: 32x32 pixels per frame
+  - Animation: 8 frames of spinning coin
+  - Visual: Gold coin with letter embossing (random letters: A-Z)
+  - Particle effect: Small sparkle particles (4x4px, yellow/white)
+- **Quantity**: 1 sprite sheet (256x32px for 8 frames)
+- **Use**: Common drop from all enemies, auto-collects with magnetism
+- **Status**: ⚠️ REQUIRED for Phase 1
+
+#### Consumable Items
+**Food Items (Common)**:
+- **Apple** 🍎
+  - Size: 32x32 pixels
+  - Idle animation: Gentle bobbing (2 frames)
+  - Glow color: White (common rarity)
+  - Quantity: 1 sprite + glow overlay
+
+- **Bread** 🍞
+  - Size: 32x32 pixels
+  - Idle animation: Gentle bobbing (2 frames)
+  - Glow color: White (common rarity)
+  - Quantity: 1 sprite + glow overlay
+
+- **Cheese** 🧀
+  - Size: 32x32 pixels
+  - Idle animation: Gentle bobbing (2 frames)
+  - Glow color: White (common rarity)
+  - Quantity: 1 sprite + glow overlay
+
+**Potions (Rare)**:
+- **Red Potion** 🧪
+  - Size: 32x32 pixels
+  - Idle animation: Liquid bubbling (4 frames)
+  - Glow color: Blue (rare rarity)
+  - Particle effect: Rising bubbles
+  - Quantity: 1 sprite sheet + particle effect
+
+- **Blue Potion** 🧪
+  - Size: 32x32 pixels
+  - Idle animation: Liquid swirling (4 frames)
+  - Glow color: Blue (rare rarity)
+  - Particle effect: Mystical wisps
+  - Quantity: 1 sprite sheet + particle effect
+
+**Epic Items**:
+- **Healing Fairy** 🧚
+  - Size: 48x48 pixels (larger for epicness)
+  - Idle animation: Flying/fluttering (6 frames)
+  - Glow color: Purple (epic rarity)
+  - Particle effect: Sparkle trail
+  - Wings animation: Gentle flutter
+  - Quantity: 1 sprite sheet + particle system
+
+#### Rune Sprites (Basic)
+- **Format**: Individual sprites with glow effects
+- **Specifications**:
+  - Size: 32x32 pixels
+  - Idle animation: Slow rotation (360° in 4s, 8 frames)
+  - Particle aura: Mystical glow matching rune color
+- **Rune Types Needed**:
+  - **Common Runes** (70% drops):
+    - Flame Rune (red/orange glow)
+    - Ice Rune (blue/cyan glow)
+    - Power Rune (yellow glow)
+  - **Rare Runes** (25% drops):
+    - Echo Rune (purple glow)
+    - Blast Rune (orange glow)
+  - **Epic Runes** (5% drops):
+    - Shield Rune (white/silver glow)
+    - Heal Rune (green glow)
+- **Quantity**: 7 rune types × 8 animation frames = 56 frames total
+- **Status**: ⚠️ REQUIRED for Phase 1
+
+#### Particle Effects
+**Burst Effects** (for enemy death drops):
+- Size: 64x64 pixels
+- Animation: 15 frames (charge → burst → disperse)
+- Color variants: Match drop type
+- Quantity: 3 variants (gold, item, rune)
+
+**Pickup Effects**:
+- Magnetism sparkle trail (for gold)
+- Item scale-up flash (for consumables)
+- Rune absorption spiral (for runes)
+
+#### Floating Text
+- **Font**: Bold, child-friendly sans-serif
+- **Sizes**: 24px for damage, 32px for pickups
+- **Colors**:
+  - Gold pickups: #FFD700 (yellow)
+  - Health: #00FF00 (green)
+  - Damage: #FF0000 (red)
+- **Animation**: Float up + fade out (1 second total)
+- **Stroke**: 2px black outline for readability
+
+### Loot Drop System Assets (Phase 2 - Visual Polish)
+
+#### Advanced Particle Systems
+- **Gold shimmer**: Continuous sparkle on idle coins
+- **Rarity beams**: Vertical light beams for epic+ drops
+- **Landing dust**: Small puff when items hit ground
+- **Collection burst**: Radial particles when picked up
+
+#### Stack Indicators
+- **Badge overlay**: "x3", "x5" quantity indicators
+- Size: 16x16 pixels
+- Background: Semi-transparent dark circle
+- Text: White, bold numbers
+
+### Enemy Sprites (Existing System - Reference)
+
+These are already partially implemented but included for completeness:
+
+#### Basic Enemies
+- Goblin, Bat, Skeleton, Slime, Orc, Demon
+- Each requires: Idle, walk, attack, death animations
+- Status: ⚠️ PARTIAL (some placeholder graphics in use)
+
+#### Boss Enemies
+- Boss variants of standard enemies
+- Larger size (96x96 vs 64x64)
+- More elaborate animations
+- Status: ⚠️ PARTIAL
+
+### UI Elements (Future Phases)
+
+#### Inventory Icons
+- 32x32 pixel icons for each consumable
+- Rune icons for equipment screen
+- Hot-bar slot backgrounds
+
+#### Shop Interface
+- Merchant NPC sprite (64x64)
+- Shop counter/stand background
+- Currency display icons
+
+### Priority Levels
+
+**🔴 CRITICAL (Needed for Phase 1)**:
+- Gold coin sprite (8 frames)
+- Apple, Bread, Cheese sprites (simple, 2 frames each)
+- Red Potion, Blue Potion sprites (4 frames each)
+- Healing Fairy sprite (6 frames)
+- Basic rune sprites (7 types, 8 frames each)
+- Burst effect for drops (15 frames)
+- Floating text rendering
+
+**🟡 HIGH (Needed for Phase 2)**:
+- Advanced particle effects
+- Rarity glow overlays
+- Stack indicators
+- Collection animations
+
+**🟢 MEDIUM (Polish/Future)**:
+- Loot beam effects
+- Environmental interactions
+- Advanced visual effects
+
+### Temporary Placeholder Strategy
+
+Until production art is available, use:
+- **Colored circles** for gold (yellow circle)
+- **Emoji or simple shapes** for consumables
+- **Colored squares** for runes (colored by type)
+- **Phaser's built-in text** for floating numbers
+- **Phaser particle system** for basic effects
+
+This allows full mechanical implementation while art assets are created.
+
+### Asset Delivery Format
+
+**Preferred formats**:
+- Sprite sheets: PNG with transparency
+- Animations: Horizontal strip layout (frame 1, 2, 3...)
+- Particles: Individual PNG files
+- Resolution: 2x for retina display support (will be scaled down)
+
+**Naming convention**:
+```
+loot_gold_coin_sheet.png (256x32, 8 frames)
+loot_consumable_apple.png (32x32, static)
+loot_consumable_apple_anim.png (64x32, 2 frames)
+loot_rune_flame_sheet.png (256x32, 8 frames)
+particle_burst_gold.png (960x64, 15 frames)
+```
+
 ## Speech Recognition & Pronunciation System
 
 ### Architecture Overview (Hybrid Approach)
