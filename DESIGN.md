@@ -5,6 +5,42 @@ Every mechanic reinforces reading practice while maintaining compelling roguelik
 
 ## Combat Mechanics
 
+### Monster Counter-Attacks: Rewarding Reading Quality
+
+**Design Philosophy**: Perfect spell casting should protect you! Reading well isn't just about dealing damage - it's also about defense.
+
+**Probabilistic Counter-Attack System**:
+- Enemies have a **base chance to counter-attack** after each player spell
+- **Perfect reading** (exact match + good pronunciation) significantly **reduces counter-attack chance**
+- **Poor reading** (wrong word, bad pronunciation) = normal or increased counter-attack chance
+
+**Counter-Attack Probabilities**:
+- **Bosses** (Melee Range ≤3 tiles): 70% base → **0% with perfect spell**
+- **Bosses** (Ranged 4-6 tiles): 50% base → **0% with perfect spell**
+- **Normal Enemies** (Melee Range ≤3 tiles): 50% base → **0% with perfect spell**
+- **Normal Enemies** (Ranged 4-6 tiles): 30% base → **0% with perfect spell**
+
+**Defense Bonus Calculation**:
+- **Exact match** (correct word): +40% defense
+- **Perfect pronunciation** (score ≥ 1.0): +40% additional defense
+- **Total defense at perfection**: 80% reduction in counter-attack chance
+
+**Example**:
+```
+Boss at melee range (70% base counter-attack chance)
+  - Perfect spell: 70% - 80% = 0% (boss cannot counter!)
+  - Good pronunciation (0.9): 70% - 58% = 12% (much safer!)
+  - Wrong word: 70% - 0% = 70% (no protection)
+```
+
+**Educational Benefits**:
+- **Immediate feedback**: Good reading = safety from attacks ("natural 20" D&D feel)
+- **Motivation to improve**: Kids WANT to pronounce correctly to avoid damage
+- **Strategic depth**: Better readers take less damage, progressing faster
+- **Positive reinforcement**: Reading well = powerful defense, not just offense
+
+**Implementation**: See `CombatSystem.ts` `triggerCounterAttacks()` method
+
 ### Option 1: Spell Chain Combat (Combo System)
 - **Basic Attack**: Read a word to cast damage spell
 - **Chain Multiplier**: Successfully reading multiple words quickly increases damage (1x, 1.5x, 2x, 3x...)
@@ -896,57 +932,86 @@ class SpeechRecognitionService {
 
 ## Security and Deployment Considerations
 
-### Speech Recognition API Security (CRITICAL FOR PRODUCTION)
+### Speech Recognition API Security ✅ IMPLEMENTED
 
-**Current Issue**: OpenAI API key exposed in client-side code via environment variables
-- `VITE_OPENAI_API_KEY` is bundled into the client application
-- API key visible to anyone who inspects the code or network traffic
-- Potential for API abuse and unauthorized usage charges
+**Previous Issue (RESOLVED)**: OpenAI API key was exposed in client-side code
+- Browser-bundled environment variables made API key visible
+- Risk of API abuse and unauthorized usage charges
 
-**Required Solution: Proxy Service**
+**✅ Implemented Solution: Express Proxy Server**
 
-#### Backend Proxy Service Requirements
-- **Authentication**: Simple session-based auth for game users
-- **Rate Limiting**: Prevent API abuse (e.g., 30 requests/minute per user)
-- **Usage Monitoring**: Track API costs and usage patterns
-- **Error Handling**: Graceful fallbacks when service is unavailable
-- **CORS Configuration**: Allow requests from game domain
+We've implemented a secure proxy server that keeps API keys server-side and prevents CORS issues.
 
-#### API Endpoint Design
+#### Architecture Overview
 ```
-POST /api/speech/recognize
-Headers:
-  - Authorization: Bearer <session-token>
-  - Content-Type: audio/webm
-Body: <audio-blob>
-Response: { text: string, confidence: number }
+[Game Client (localhost:3000)]
+         ↓ HTTP request with audio blob
+[Proxy Server (localhost:3001)]
+         ↓ Authenticated API call with server-side key
+[OpenAI Whisper API]
 ```
 
-#### Client-Side Changes Required
-- Remove `VITE_OPENAI_API_KEY` environment variable
-- Update `StreamingSpeechService` to call proxy instead of OpenAI directly
-- Add session management for proxy authentication
-- Implement retry logic for network failures
+#### Implementation Details
 
-#### Deployment Architecture
+**Backend Server** (`server.js`):
+- **Express.js** proxy running on port 3001
+- **CORS configured** to only allow requests from game client
+- **Secure API key storage** via server-side environment variables
+- **Error handling** with detailed logging
+- **Multer** for multipart/form-data audio file uploads
+
+**Proxy Endpoint**:
 ```
-[Game Client] → [Proxy Service] → [OpenAI Whisper API]
-     ↓              ↓                    ↓
-  No API Key    Secure API Key      Speech Recognition
-  Rate Limited   Usage Tracking     Cost Management
+POST http://localhost:3001/api/transcribe
+Body: FormData with audio file + model parameters
+Response: { text: string } (Whisper transcription)
 ```
 
-#### Implementation Priority
-- **Phase 1**: Basic proxy with API key protection
-- **Phase 2**: Rate limiting and usage monitoring
-- **Phase 3**: Advanced features (user analytics, cost optimization)
+**Client Changes** (`GameScene.ts`):
+- Changed from direct OpenAI calls to proxy endpoint
+- Removed API key from client-side requests
+- Added error handling for proxy connection issues
 
-#### Alternative Solutions Considered
+**Development Workflow**:
+```bash
+# Terminal 1: Start API proxy server
+npm run server
+
+# Terminal 2: Start game dev server
+npm run dev
+```
+
+#### Security Benefits
+✅ **API Key Protection**: Key never exposed to browser/client code
+✅ **CORS Resolution**: Server-to-server calls bypass browser restrictions
+✅ **Request Control**: All API calls go through proxy (can add logging, rate limiting)
+✅ **FreeBSD Compatible**: Works on all platforms including FreeBSD
+
+#### Future Enhancements (TODO)
+- **Session Authentication**: Add user session validation
+- **Rate Limiting**: Implement per-user request throttling (e.g., 30 req/min)
+- **Usage Monitoring**: Log API costs and track usage patterns
+- **Request Caching**: Cache repeated transcriptions for identical audio
+- **Production Deployment**: Deploy proxy to cloud service (Vercel, Railway, etc.)
+
+#### Deployment Considerations
+**Local Development** (Current):
+- Proxy runs locally on port 3001
+- Game connects to `http://localhost:3001/api/transcribe`
+
+**Production** (Future):
+- Deploy proxy to cloud hosting service
+- Update client to use production proxy URL
+- Add authentication layer for public access
+- Implement rate limiting and monitoring
+- Use environment-specific CORS origins
+
+**Alternative Solutions Considered**:
 - **Browser Speech Recognition**: Less accurate, limited browser support
 - **Offline Speech Recognition**: Large model downloads, performance issues
 - **Third-party Services**: Additional vendor dependency, potential privacy concerns
 
-**Status**: ⚠️ REQUIRED BEFORE PRODUCTION DEPLOYMENT
+**Status**: ✅ **COMPLETED** - Secure proxy server operational for local development
 
 ## Technical Architecture Decisions
 

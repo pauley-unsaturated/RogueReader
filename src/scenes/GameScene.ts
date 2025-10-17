@@ -1267,10 +1267,15 @@ export class GameScene extends Phaser.Scene {
     // Calculate speech-based modifiers
     let speechModifiers = undefined
     if (speechResult) {
+      // wasExactMatch: critical hit means exact or excellent match
+      // This will give defense bonus against counter-attacks!
+      const wasExactMatch = speechResult.isCriticalHit && !speechResult.isTimeout && !speechResult.isError
+
       speechModifiers = {
         pronunciationScore: speechResult.pronunciation_score || 1.0,
         isCriticalHit: speechResult.isCriticalHit,
-        spellingPenalty: speechResult.isTimeout ? 0.3 : 0
+        spellingPenalty: speechResult.isTimeout ? 0.3 : 0,
+        wasExactMatch
       }
       console.log('🎯 Speech modifiers:', speechModifiers)
     }
@@ -1931,17 +1936,17 @@ export class GameScene extends Phaser.Scene {
     // This made Whisper more likely to hallucinate the target from noise
     formData.append('prompt', 'The user is saying a single English word clearly.')
 
-    const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY
-    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    // Call local proxy server instead of OpenAI directly (avoids CORS issues)
+    const proxyUrl = 'https://localhost:3001/api/transcribe'
+    const response = await fetch(proxyUrl, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`
-      },
       body: formData
     })
 
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`)
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      console.error('Transcription API error:', errorData)
+      throw new Error(`API error: ${response.status} - ${errorData.error || 'Unknown'}`)
     }
 
     const data = await response.json()

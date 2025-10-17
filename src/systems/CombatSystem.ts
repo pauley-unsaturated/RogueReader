@@ -38,6 +38,7 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
   private spellHistory: SpellCast[];
   private isInCombat: boolean;
   private wordComplexityBonus: Map<string, number>;
+  private playerAttackCount: number; // Track attacks for boss counter-attack frequency
 
   constructor() {
     super();
@@ -45,6 +46,7 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
     this.spellHistory = [];
     this.isInCombat = false;
     this.wordComplexityBonus = new Map();
+    this.playerAttackCount = 0; // Initialize attack counter
 
     this.comboState = {
       count: 0,
@@ -91,7 +93,8 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
   public castSpell(word: string, targetId?: string, speechResult?: {
     pronunciationScore?: number,
     isCriticalHit?: boolean,
-    spellingPenalty?: number
+    spellingPenalty?: number,
+    wasExactMatch?: boolean  // Did they say the exact word correctly?
   }): SpellCast {
     console.log(`⚡ CombatSystem.castSpell() called with word="${word}", targetId=${targetId}, enemies=${this.enemies.size}`);
     const now = Date.now();
@@ -189,7 +192,10 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
 
     // Monster Counter-Attacks (Item #11 follow-up)
     // Enemies within range counter-attack after player casts spell
-    this.triggerCounterAttacks();
+    // Perfect spell casting reduces counter-attack chance (reward for reading well!)
+    this.playerAttackCount++;
+    const wasExactMatch = speechResult?.wasExactMatch || false;
+    this.triggerCounterAttacks(wasExactMatch, pronunciationScore);
 
     return spell;
   }
@@ -198,33 +204,67 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
    * Trigger counter-attacks from enemies within range
    * Adds strategic depth: players must consider enemy positioning when casting
    *
-   * Design (from ERINS_FEEDBACK_TODOS.md):
-   * - Monsters attack AFTER player fires spell
-   * - Only attack if in range
-   * - Not all monsters are ranged/magic users
+   * Design (NEW - Probabilistic):
+   * - Monsters attack AFTER player fires spell (with probability)
+   * - Perfect spell casting = major defense bonus ("natural 20" - you deflect attacks!)
+   * - Poor pronunciation = normal or increased counter-attack chance
+   * - Bosses have higher base counter-attack chance but still affected by spell quality
    * - Creates risk/reward: "Do I target the close goblin or the far archer?"
    */
-  private triggerCounterAttacks(): void {
+  private triggerCounterAttacks(wasExactMatch: boolean, pronunciationScore: number): void {
     if (this.enemies.size === 0) return;
 
     const counterAttackers: CombatEntity[] = [];
 
-    // Determine which enemies counter-attack based on range
+    // Calculate defensive bonus from spell quality
+    // Perfect cast (exact match + good pronunciation) = strong defense
+    let defenseBonus = 0;
+    if (wasExactMatch) {
+      // Exact match gives base 40% defense
+      defenseBonus = 0.4;
+
+      // Perfect pronunciation adds another 40% (total 80% defense at perfect)
+      if (pronunciationScore >= 1.0) {
+        defenseBonus += 0.4;
+      } else if (pronunciationScore >= 0.8) {
+        // Good pronunciation adds 20-40% more
+        defenseBonus += 0.2 + (pronunciationScore - 0.8) * 1.0;
+      }
+    }
+
+    console.log(`🛡️ Spell quality defense: ${(defenseBonus * 100).toFixed(0)}% (exact=${wasExactMatch}, pronunciation=${pronunciationScore.toFixed(2)})`);
+
+    // Determine which enemies counter-attack based on range and probability
     this.enemies.forEach(enemy => {
       const distance = Math.abs(enemy.gridPosition.x - this.player.gridPosition.x) +
                       Math.abs(enemy.gridPosition.y - this.player.gridPosition.y);
 
-      // Counter-attack range rules:
-      // - Within 3 tiles: Always counter-attack (melee range)
-      // - Within 6 tiles: 50% chance (some enemies have ranged abilities)
-      // - Beyond 6 tiles: No counter-attack (too far)
+      // Check if this is a boss (bosses have "boss" in their ID)
+      const isBoss = enemy.id.includes('boss');
+
+      // Base counter-attack chance by enemy type
+      let baseCounterChance = 0;
+
       if (distance <= 3) {
-        counterAttackers.push(enemy);
+        // Melee range: bosses 70%, normal enemies 50%
+        baseCounterChance = isBoss ? 0.7 : 0.5;
       } else if (distance <= 6) {
-        // 50% chance for ranged counter-attack
-        if (Math.random() < 0.5) {
-          counterAttackers.push(enemy);
-        }
+        // Ranged: bosses 50%, normal enemies 30%
+        baseCounterChance = isBoss ? 0.5 : 0.3;
+      } else {
+        // Too far - no counter-attack
+        return;
+      }
+
+      // Apply defensive bonus (perfect spell = much lower counter chance!)
+      const finalCounterChance = Math.max(0, baseCounterChance - defenseBonus);
+
+      // Roll for counter-attack
+      if (Math.random() < finalCounterChance) {
+        counterAttackers.push(enemy);
+        console.log(`⚔️ ${enemy.name} (${isBoss ? 'BOSS' : 'normal'}) counter-attacks! (${(finalCounterChance * 100).toFixed(0)}% chance, rolled success)`);
+      } else {
+        console.log(`🛡️ ${enemy.name} counter-attack blocked! (${(finalCounterChance * 100).toFixed(0)}% chance, rolled fail)`);
       }
     });
 
@@ -407,6 +447,9 @@ export class CombatSystem extends Phaser.Events.EventEmitter {
     // Reset combo
     this.comboState.count = 0;
     this.comboState.multiplier = 1.0;
+
+    // Reset attack counter for next combat
+    this.playerAttackCount = 0;
   }
 
   public takeDamage(amount: number): void {

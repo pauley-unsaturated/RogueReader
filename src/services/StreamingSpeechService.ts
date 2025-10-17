@@ -38,6 +38,18 @@ export class StreamingSpeechService {
     try {
       console.log('🔥 Pre-warming MediaRecorder...')
 
+      // DEBUG: List available audio devices
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        const audioInputs = devices.filter(d => d.kind === 'audioinput')
+        console.log('🎤 Available audio input devices:')
+        audioInputs.forEach((device, i) => {
+          console.log(`  ${i}: ${device.label || 'Unnamed'} (${device.deviceId.substring(0, 20)}...)`)
+        })
+      } catch (e) {
+        console.warn('Could not enumerate devices:', e)
+      }
+
       // Get microphone stream
       this.currentStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -48,6 +60,13 @@ export class StreamingSpeechService {
           autoGainControl: true
         }
       })
+
+      // DEBUG: Show which device was actually selected
+      const audioTrack = this.currentStream.getAudioTracks()[0]
+      if (audioTrack) {
+        console.log('🎤 Selected audio device:', audioTrack.label)
+        console.log('🎤 Audio track settings:', audioTrack.getSettings())
+      }
 
       // Determine best audio format
       const mimeType = this.getBestMimeType()
