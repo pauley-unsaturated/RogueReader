@@ -687,15 +687,26 @@ export class GameScene extends Phaser.Scene {
 
   private nextFloor(): void {
     this.currentFloor++
+
+    // Reset player movement state BEFORE generating new dungeon
+    this.player.isMoving = false
+    this.tweens.killTweensOf(this.player) // Kill any active movement tweens
+
     this.generateDungeon()
-    
+
     // Move player to new start position
     const startPos = this.dungeon.playerStart
     this.player.gridX = startPos.x
     this.player.gridY = startPos.y
     this.player.x = startPos.x * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2
     this.player.y = startPos.y * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2
-    
+
+    // Make sure camera follows player on new floor
+    this.cameras.main.startFollow(this.player, true)
+    this.cameras.main.centerOn(this.player.x, this.player.y)
+
+    console.log(`📷 Camera centered on player at (${this.player.x}, ${this.player.y})`)
+
     this.displayFloorInfo()
   }
 
@@ -732,6 +743,13 @@ export class GameScene extends Phaser.Scene {
       console.log(`🏁 combatEnded event received - isInCombat=${this.isInCombat}`)
       console.log(`  Total enemies in scene: ${this.enemies.length}`)
       console.log(`  Alive enemies in scene: ${this.enemies.filter(e => e.isAliveStatus()).length}`)
+
+      // DEBUG: Log all enemy positions
+      this.enemies.filter(e => e.isAliveStatus()).forEach(enemy => {
+        const pos = enemy.getGridPosition()
+        console.log(`  👹 Enemy ${enemy.id} at (${pos.x}, ${pos.y})`)
+      })
+
       this.hideCombatPrompt()
 
       // Restore some mana after combat
@@ -746,16 +764,20 @@ export class GameScene extends Phaser.Scene {
       // Check if current room is truly cleared (room-based, not proximity-based)
       const currentRoom = this.currentPlayerRoomIndex
       console.log(`  Current room index: ${currentRoom}`)
+      console.log(`  Player position: (${this.player.gridX}, ${this.player.gridY})`)
 
       if (currentRoom !== null) {
         const room = this.dungeon.rooms[currentRoom]
+        console.log(`  Room ${currentRoom} bounds: x=${room.x}-${room.x + room.width}, y=${room.y}-${room.y + room.height}`)
 
         // Count alive enemies in THIS specific room
         const roomEnemies = this.enemies.filter(enemy => {
           if (!enemy.isAliveStatus()) return false
           const pos = enemy.getGridPosition()
-          return pos.x >= room.x && pos.x < room.x + room.width &&
-                 pos.y >= room.y && pos.y < room.y + room.height
+          const inRoom = pos.x >= room.x && pos.x < room.x + room.width &&
+                        pos.y >= room.y && pos.y < room.y + room.height
+          console.log(`  Checking enemy ${enemy.id} at (${pos.x}, ${pos.y}): inRoom=${inRoom}`)
+          return inRoom
         })
 
         console.log(`📊 Room ${currentRoom} clear check: ${roomEnemies.length} alive enemies remain in room`)
@@ -2142,44 +2164,10 @@ export class GameScene extends Phaser.Scene {
     }
     this.streamingService?.stopStreaming()
 
-    if (results.length === 0) {
-      // No words spoken - enter learning mode
-      if (this.currentWord) {
-        this.startPhoneticLessonMode()
-      }
-    } else {
-      // Cast spell with combo multiplier
-      const comboMultiplier = Math.min(3, 1 + (results.length - 1) * 0.5)
-      const comboCount = results.length
-
-      // Show spell firing animation that scales with combo count
-      this.showSpellFiringAnimation(comboCount, comboMultiplier)
-
-      // Use best result from combo for spell casting (unused for now)
-      // const bestResult = results.reduce((best, current) => {
-      //   if (current.isCriticalHit && !best.isCriticalHit) return current
-      //   if (current.confidence > best.confidence) return current
-      //   return best
-      // })
-
-      // Cast spell for each word in combo
-      results.forEach((result, index) => {
-        const word = this.comboWords[index]
-        if (word) {
-          const modifiedResult = {
-            ...result,
-            confidence: result.confidence * comboMultiplier,
-            pronunciation_score: (result.pronunciation_score ?? 1) * comboMultiplier
-          }
-          this.castSpell(word, modifiedResult)
-        }
-      })
-    }
-
     // Store combat state before closing dialog
     const stillInCombat = this.isInCombat
 
-    // CRITICAL: Close the dialog UI before cleanup
+    // CRITICAL: Close the dialog UI FIRST so projectiles are visible
     if (this.castingDialog) {
       console.log('🚪 Closing casting dialog UI')
       // Set debounce flag to prevent multiple dismiss animations
@@ -2187,20 +2175,48 @@ export class GameScene extends Phaser.Scene {
       this.castingDialog.close()  // This animates out and destroys the dialog
       // Note: The dialog's onClose callback will call cleanupCastingDialog()
 
-      // If still in combat, schedule a new dialog after the close animation
+      // FIX: Don't auto-show dialog - wait for player to press spacebar
+      // This prevents the "auto-popping" issue during boss fights
       if (stillInCombat) {
-        console.log('⚔️ Still in combat - creating new spell dialog after delay')
-        this.time.delayedCall(800, () => {  // Wait longer for close animation + buffer
-          if (this.isInCombat && !this.castingDialog) {
-            this.showCastingDialog()
-          }
-        })
+        console.log('⚔️ Still in combat - waiting for player to press spacebar for next spell')
+        // The spacebar handler will call showCastingDialog() when ready
       } else {
         console.log('✅ Combat ended - no new dialog needed')
       }
     } else {
       // If no dialog, still do cleanup
       this.cleanupCastingDialog()
+    }
+
+    // Fire projectiles AFTER starting dialog close animation so they're visible
+    if (results.length === 0) {
+      // No words spoken - enter learning mode
+      if (this.currentWord) {
+        this.startPhoneticLessonMode()
+      }
+    } else {
+      // Small delay to let dialog start fading (150ms gives nice overlap)
+      this.time.delayedCall(150, () => {
+        // Cast spell with combo multiplier
+        const comboMultiplier = Math.min(3, 1 + (results.length - 1) * 0.5)
+        const comboCount = results.length
+
+        // Show spell firing animation that scales with combo count
+        this.showSpellFiringAnimation(comboCount, comboMultiplier)
+
+        // Cast spell for each word in combo (this fires the projectiles!)
+        results.forEach((result, index) => {
+          const word = this.comboWords[index]
+          if (word) {
+            const modifiedResult = {
+              ...result,
+              confidence: result.confidence * comboMultiplier,
+              pronunciation_score: (result.pronunciation_score ?? 1) * comboMultiplier
+            }
+            this.castSpell(word, modifiedResult)
+          }
+        })
+      })
     }
   }
 
@@ -2641,6 +2657,9 @@ export class GameScene extends Phaser.Scene {
       this.currentWord = null
       this.isSpaceKeyDown = false
 
+      // Stop UIScene to hide HP/MP bars
+      this.scene.stop('UIScene')
+
       // Return to main menu
       this.scene.start('MenuScene')
     }
@@ -2797,7 +2816,34 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Check for combat proximity
+    // Check for enemies in current room (boss/combat rooms)
+    // This catches enemies that walk into the player's room after boss is defeated
+    if (!this.isInCombat && this.currentPlayerRoomIndex !== null) {
+      const currentRoom = this.dungeon.rooms[this.currentPlayerRoomIndex]
+
+      if (currentRoom.type === 'boss' || currentRoom.type === 'combat') {
+        // Check if any alive enemies are in this room
+        const roomEnemies = this.enemies.filter(enemy => {
+          if (!enemy.isAliveStatus() || enemy.isInCombatStatus()) return false
+          const pos = enemy.getGridPosition()
+          return pos.x >= currentRoom.x && pos.x < currentRoom.x + currentRoom.width &&
+                 pos.y >= currentRoom.y && pos.y < currentRoom.y + currentRoom.height
+        })
+
+        if (roomEnemies.length > 0) {
+          console.log(`👹 ${roomEnemies.length} enemies entered ${currentRoom.type} room ${this.currentPlayerRoomIndex} - starting combat!`)
+          roomEnemies.forEach(enemy => {
+            console.log(`  Adding enemy to combat: ${enemy.id}`)
+            this.combatSystem.addEnemy(enemy.getCombatEntity())
+            enemy.startCombat(this.player.getGridPosition())
+          })
+          // Lock doors again
+          this.lockRoomDoors(this.currentPlayerRoomIndex)
+        }
+      }
+    }
+
+    // Check for combat proximity (original proximity-based system)
     const DISENGAGE_RANGE = 10  // Larger range to prevent flickering in/out of combat
 
     // Get all alive enemies and their distances

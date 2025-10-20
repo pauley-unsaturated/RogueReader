@@ -248,10 +248,11 @@ export class DropManager {
         return;
     }
 
-    // Create placeholder circle for now
+    // Create placeholder circle for now (Phase 1 - colored circles until art assets ready)
     const graphics = this.scene.add.graphics();
     graphics.fillStyle(spriteColor, 1);
-    graphics.fillCircle(spawnX, spawnY, 12);
+    graphics.fillCircle(0, 0, 12); // Draw at origin (0,0)
+    graphics.setPosition(spawnX, spawnY); // Position the graphics object
     graphics.setDepth(50);
 
     // Create drop data
@@ -259,6 +260,7 @@ export class DropManager {
       id: dropId,
       type,
       sprite,
+      graphics, // Store graphics for cleanup
       value: data.value,
       item: data.name ? this.createConsumableItem(data) : undefined,
       rune: data.type ? this.createRuneData(data) : undefined,
@@ -274,14 +276,15 @@ export class DropManager {
 
     // Animate drop with arc trajectory
     this.scene.tweens.add({
-      targets: [sprite, graphics],
+      targets: graphics, // Only animate the graphics (sprite is invisible placeholder)
       x: targetX,
       y: targetY,
       duration: DROP_CONFIG.DROP_BOUNCE_DURATION,
       ease: 'Cubic.easeOut',
       onComplete: () => {
         drop.isCollectable = true;
-        console.log(`✅ Drop ${dropId} is now collectable`);
+        drop.position = { x: targetX, y: targetY }; // Update position after animation
+        console.log(`✅ Drop ${dropId} is now collectable at (${targetX}, ${targetY})`);
       },
     });
 
@@ -299,9 +302,10 @@ export class DropManager {
     const playerPos = this.getPlayerPosition();
     if (!playerPos) return;
 
-    // Tween gold to player
+    // Tween gold graphics to player (not sprite, since sprite is invisible)
+    const target = drop.graphics || drop.sprite;
     this.scene.tweens.add({
-      targets: drop.sprite,
+      targets: target,
       x: playerPos.x,
       y: playerPos.y,
       duration: DROP_CONFIG.GOLD_COLLECT_TWEEN_DURATION,
@@ -313,8 +317,8 @@ export class DropManager {
         // Show floating text
         this.showFloatingText(
           `+${drop.value} Gold`,
-          drop.sprite.x,
-          drop.sprite.y,
+          target.x,
+          target.y,
           '#FFD700'
         );
 
@@ -398,9 +402,10 @@ export class DropManager {
       alert(`You found: ${itemName}\n\nPress OK to pick it up!`);
     }
 
-    // Pickup animation
+    // Pickup animation (animate graphics, not sprite)
+    const target = drop.graphics || drop.sprite;
     this.scene.tweens.add({
-      targets: drop.sprite,
+      targets: target,
       scale: 1.5,
       alpha: 0,
       duration: DROP_CONFIG.ITEM_COLLECT_TWEEN_DURATION,
@@ -415,8 +420,8 @@ export class DropManager {
         // Show floating text
         this.showFloatingText(
           `+${itemName}`,
-          drop.sprite.x,
-          drop.sprite.y,
+          target.x,
+          target.y,
           this.getRarityColorHex(drop.item?.rarity || drop.rune?.rarity || 'common')
         );
 
@@ -434,6 +439,7 @@ export class DropManager {
    */
   private removeDrop(drop: Drop): void {
     drop.sprite?.destroy();
+    drop.graphics?.destroy(); // Clean up graphics object
     this.drops.delete(drop.id);
     console.log(`Removed drop: ${drop.id}`);
   }
@@ -637,6 +643,7 @@ export class DropManager {
   public cleanup(): void {
     this.drops.forEach((drop) => {
       drop.sprite?.destroy();
+      drop.graphics?.destroy(); // Clean up graphics objects
     });
     this.drops.clear();
 

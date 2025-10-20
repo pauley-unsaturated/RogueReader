@@ -26,7 +26,7 @@ export const ELEMENT_CONFIGS: Record<ElementType, ElementConfig> = {
     color: 0xff4500,      // Orange-red
     particleColor: 0xff8c00,
     trailLength: 20,
-    speed: 200,           // Slow, visible projectile
+    speed: 120,           // SLOW, very visible projectile (was 200)
     damageMultiplier: 1.1, // 110% damage
     trait: 'burn'         // 2 damage/sec for 3 seconds
   },
@@ -34,7 +34,7 @@ export const ELEMENT_CONFIGS: Record<ElementType, ElementConfig> = {
     color: 0x00bfff,      // Deep sky blue
     particleColor: 0x87ceeb,
     trailLength: 15,
-    speed: 250,           // Fast projectile (but still visible)
+    speed: 150,           // Medium speed, visible (was 250)
     damageMultiplier: 1.0, // 100% damage
     trait: 'slow'         // 30% chance, 50% movement reduction
   },
@@ -42,7 +42,7 @@ export const ELEMENT_CONFIGS: Record<ElementType, ElementConfig> = {
     color: 0xffff00,      // Yellow
     particleColor: 0xffffff,
     trailLength: 10,
-    speed: Infinity,      // Instant hit
+    speed: 400,           // Fast but visible (was Infinity - instant)
     damageMultiplier: 0.9, // 90% damage
     trait: 'chain'        // 20% chance to hit nearby enemy
   },
@@ -50,7 +50,7 @@ export const ELEMENT_CONFIGS: Record<ElementType, ElementConfig> = {
     color: 0x9370db,      // Medium purple
     particleColor: 0xda70d6,
     trailLength: 15,
-    speed: 225,           // Moderate speed
+    speed: 130,           // Slow, mystical feel (was 225)
     damageMultiplier: 1.0, // 100% + complexity bonus
     trait: 'scholar'      // +5% damage per letter beyond 3
   }
@@ -81,6 +81,8 @@ export class Projectile extends Phaser.GameObjects.Container {
     // Add to scene
     scene.add.existing(this);
     this.setDepth(50); // Above enemies (10) but below UI (100+)
+
+    console.log(`🚀 Projectile created at (${this.x}, ${this.y}) targeting ${config.targetEnemy.id} with velocity (${this.velocity.x.toFixed(1)}, ${this.velocity.y.toFixed(1)})`);
   }
 
   private calculateVelocity(): Phaser.Math.Vector2 {
@@ -108,30 +110,37 @@ export class Projectile extends Phaser.GameObjects.Container {
   }
 
   private createSprite(): void {
-    // Phase 1: Simple colored circle
+    // Phase 1: Simple colored circle (sized for visibility without being overwhelming)
     this.sprite = this.scene.add.graphics();
 
-    // Scale size based on combo level
-    const baseSize = 8;
-    const sizeMultiplier = 1 + (this.config.comboLevel - 1) * 0.2; // 1x, 1.2x, 1.4x, etc.
+    // Scale size based on combo level - BASE SIZE 12px (50% bigger than original 8px)
+    const baseSize = 12;
+    const sizeMultiplier = 1 + (this.config.comboLevel - 1) * 0.15; // 1x, 1.15x, 1.3x (reduced scaling)
     const size = baseSize * sizeMultiplier;
 
-    // Draw filled circle with element color
+    // Draw filled circle with element color at (0,0) relative to graphics object
     this.sprite.fillStyle(this.elementConfig.color, 1);
     this.sprite.fillCircle(0, 0, size);
 
-    // Add glow effect for higher combo levels
+    // Add bright glow effect for ALL projectiles (not just combo 2+)
+    this.sprite.lineStyle(2, this.elementConfig.color, 0.7);
+    this.sprite.strokeCircle(0, 0, size + 2);
+
+    // Add outer glow for higher combo levels
     if (this.config.comboLevel >= 2) {
-      this.sprite.lineStyle(2, this.elementConfig.color, 0.6);
-      this.sprite.strokeCircle(0, 0, size + 2);
+      this.sprite.lineStyle(2, this.elementConfig.color, 0.5);
+      this.sprite.strokeCircle(0, 0, size + 4);
     }
 
     if (this.config.comboLevel >= 3) {
       this.sprite.lineStyle(2, this.elementConfig.color, 0.3);
-      this.sprite.strokeCircle(0, 0, size + 4);
+      this.sprite.strokeCircle(0, 0, size + 6);
     }
 
+    // Add graphics to this container
     this.add(this.sprite);
+
+    console.log(`🎨 Created projectile sprite: element=${this.config.element}, size=${size}, color=0x${this.elementConfig.color.toString(16)}`);
   }
 
   public update(_time: number, delta: number): void {
@@ -148,10 +157,8 @@ export class Projectile extends Phaser.GameObjects.Container {
     this.x += this.velocity.x * deltaSeconds;
     this.y += this.velocity.y * deltaSeconds;
 
-    // Create trail effect
-    if (this.config.comboLevel >= 2) {
-      this.createTrailParticle();
-    }
+    // Create trail effect for ALL projectiles (not just combo 2+)
+    this.createTrailParticle();
 
     // Check collision with target
     this.checkCollision();
@@ -159,19 +166,21 @@ export class Projectile extends Phaser.GameObjects.Container {
 
   private createTrailParticle(): void {
     const trail = this.scene.add.graphics();
-    const size = 4 * (1 + (this.config.comboLevel - 1) * 0.1);
+    // Trail particles scaled down to match smaller projectile size
+    const size = 6 * (1 + (this.config.comboLevel - 1) * 0.12);
 
-    trail.fillStyle(this.elementConfig.particleColor, 0.5);
+    // Brighter trail with more opacity
+    trail.fillStyle(this.elementConfig.particleColor, 0.8);
     trail.fillCircle(this.x, this.y, size);
     trail.setDepth(49); // Just below projectile
 
     this.trailParticles.push(trail);
 
-    // Fade out and destroy trail particle
+    // Fade out and destroy trail particle - longer duration for visibility
     this.scene.tweens.add({
       targets: trail,
       alpha: 0,
-      duration: 300,
+      duration: 500,
       onComplete: () => {
         trail.destroy();
         const index = this.trailParticles.indexOf(trail);

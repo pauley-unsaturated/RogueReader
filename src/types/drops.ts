@@ -81,6 +81,9 @@ export interface Drop {
   /** Phaser sprite for rendering */
   sprite: Phaser.GameObjects.Sprite;
 
+  /** Placeholder graphics object (Phase 1 - until sprites ready) */
+  graphics?: Phaser.GameObjects.Graphics;
+
   /** Gold value (only for gold drops) */
   value?: number;
 
