@@ -72,7 +72,7 @@ export class GameScene extends Phaser.Scene {
     this.isGameOver = false
     this.isInCombat = false
     this.currentWord = null
-    this.currentFloor = this.currentFloor || 1
+    // Note: currentFloor is set later from scene data to support level skip feature
     this.isSpaceKeyDown = false
     this.enemies = []
     this.tiles = []
@@ -84,11 +84,15 @@ export class GameScene extends Phaser.Scene {
     this.wordManager = new WordManager()
     this.combatSystem = new CombatSystem()
 
-    // Initialize ProjectileManager with random wizard element (for now)
-    const wizardElements: ElementType[] = ['fire', 'ice', 'lightning', 'arcane']
-    const randomElement = wizardElements[Math.floor(Math.random() * wizardElements.length)]
-    this.projectileManager = new ProjectileManager(this, randomElement)
-    console.log(`🧙 Starting game as ${randomElement} wizard!`)
+    // Initialize ProjectileManager with wizard element from scene data (or default to fire)
+    const sceneData = this.scene.settings.data as { wizardElement?: ElementType; startingFloor?: number }
+    const selectedElement = sceneData.wizardElement || 'fire'  // Default to fire if not specified
+    const startingFloor = sceneData.startingFloor || 1  // Default to floor 1 if not specified
+    this.projectileManager = new ProjectileManager(this, selectedElement)
+    console.log(`🧙 Starting game as ${selectedElement} wizard on floor ${startingFloor}!`)
+
+    // Set initial floor from scene data (for level skip feature)
+    this.currentFloor = startingFloor
 
     this.currencySystem = new CurrencySystem()
     this.inventorySystem = new InventorySystem()
@@ -1003,7 +1007,7 @@ export class GameScene extends Phaser.Scene {
         const config = (enemy as any).config // Access enemy config
         const isBoss = data.id.startsWith('boss_')
 
-        // Spawn loot drops at enemy position
+        // Spawn loot drops at enemy position (with floor-based gold scaling)
         const enemyWorldPos = {
           x: data.position.x * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2,
           y: data.position.y * GAME_CONFIG.TILE_SIZE + GAME_CONFIG.TILE_SIZE / 2
@@ -1012,7 +1016,8 @@ export class GameScene extends Phaser.Scene {
           enemyWorldPos.x,
           enemyWorldPos.y,
           config.type,
-          isBoss
+          isBoss,
+          this.currentFloor  // Pass floor for gold scaling
         )
 
         // Legacy currency system (keep for now until inventory integration complete)

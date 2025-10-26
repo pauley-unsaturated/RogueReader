@@ -115,25 +115,33 @@ export class DropManager {
    * @param enemyY - Enemy Y position
    * @param enemyType - Type of enemy for drop table lookup
    * @param isBoss - Whether this was a boss enemy
+   * @param currentFloor - Current dungeon floor (for gold scaling)
    */
   public spawnDropsFromEnemy(
     enemyX: number,
     enemyY: number,
     enemyType: string,
-    isBoss: boolean = false
+    isBoss: boolean = false,
+    currentFloor: number = 1
   ): void {
-    console.log(`💰 Spawning drops from ${enemyType} at (${enemyX}, ${enemyY})`);
+    console.log(`💰 Spawning drops from ${enemyType} at (${enemyX}, ${enemyY}) on floor ${currentFloor}`);
 
     const dropConfig = ENEMY_DROP_TABLES[enemyType] || ENEMY_DROP_TABLES.goblin;
     const dropsToSpawn: Array<{ type: DropType; data: any }> = [];
 
+    // Calculate floor-based gold multiplier (Dragon Warrior-style scaling)
+    // Floor 1: 1.0x, Floor 10: 2.35x, Floor 20: 3.85x, Floor 40: 7.0x
+    const floorMultiplier = 1 + (currentFloor * 0.15);
+
     // 1. GOLD DROP (guaranteed for non-boss enemies)
     if (!isBoss) {
-      const goldAmount = Phaser.Math.Between(
+      const baseGold = Phaser.Math.Between(
         dropConfig.goldBase.min,
         dropConfig.goldBase.max
       );
-      dropsToSpawn.push({ type: 'gold', data: { value: goldAmount } });
+      const scaledGold = Math.max(1, Math.floor(baseGold * floorMultiplier));
+      dropsToSpawn.push({ type: 'gold', data: { value: scaledGold } });
+      console.log(`  💰 Gold drop: ${baseGold} base × ${floorMultiplier.toFixed(2)} = ${scaledGold} gold`);
     }
 
     // 2. CONSUMABLE DROP (chance-based or guaranteed for bosses)
@@ -152,12 +160,13 @@ export class DropManager {
       }
     }
 
-    // 4. BOSS BONUS DROPS (3-5 guaranteed items)
+    // 4. BOSS BONUS DROPS (3-5 guaranteed items with floor scaling)
     if (isBoss) {
       const bonusCount = Phaser.Math.Between(3, 5);
       for (let i = 0; i < bonusCount; i++) {
-        const goldAmount = Phaser.Math.Between(5, 15);
-        dropsToSpawn.push({ type: 'gold', data: { value: goldAmount } });
+        const baseGold = Phaser.Math.Between(2, 4);  // Reduced from 5-15
+        const scaledGold = Math.max(1, Math.floor(baseGold * floorMultiplier));
+        dropsToSpawn.push({ type: 'gold', data: { value: scaledGold } });
       }
 
       // Guaranteed rare+ consumable

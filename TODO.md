@@ -1,296 +1,259 @@
-# RogueReader - TODO List
+# RogueReader - Sprint TODO (October 25, 2025)
 
-**Last Updated**: January 2025
-**Current Session**: Item #17 Phase 1 (Projectile System) COMPLETE ✅
-
----
-
-## ✅ COMPLETED - Current Session
-
-### Item #13: Word List Verification
-**Status**: COMPLETE ✅
-**Commit**: `931c8cb` - "Complete word list audit and add 52 missing high-frequency words"
-
-**Results**:
-- ✅ Dolch Pre-Primer: 42.5% → 100% (COMPLETE!)
-- ✅ Common Nouns: 31.8% → 100% (ALL 22 PRESENT!)
-- ✅ Fry First 100: 72% → 75% (+3%)
-- ✅ Added 52 high-frequency words across levels 1-5
-- ✅ Created `tools/audit-word-lists.js` for future audits
-
-**Changes Made**:
-- Level 1 (+3): a, I, am
-- Level 2 (+6): is, it, in, an, as, at
-- Level 3 (+6): and, the, to, of, for, or
-- Level 4 (+23): ALL missing Dolch Pre-Primer words
-- Level 5 (+15): bird, fish, tree, moon, star, rain, snow, home, school, book, ball, bike, food, milk, water
+**Current Status**: Game is highly polished and playable! New sprint focused on polish and remaining features.
 
 ---
 
-## 🚧 IN PROGRESS - Current Task
+## 🎉 RECENTLY COMPLETED (This Session)
 
-### Item #17: Spell Projectile System with Element Effects
-**Status**: PHASE 1 COMPLETE ✅ → Phase 2 Ready
-**Priority**: HIGH (fixes AOE problem + adds visual feedback)
-**Design**: COMPLETE (see DESIGN.md - Elemental Wizard System section)
-**Commit**: `[pending]` - "Implement Phase 1: Basic projectile system with 4 wizard elements"
+### Gold Economy Overhaul
+- ✅ Reduced base gold drops by ~70% (goblin: 3-5 → 1-2, bat: 2-4 → 1, etc.)
+- ✅ Implemented floor-based scaling: `finalGold = baseGold × (1 + floor × 0.15)`
+- ✅ Floor 1: 1x multiplier (cheap Dragon Warrior economy)
+- ✅ Floor 40: 7x multiplier (rewarding for advanced readers)
+- ✅ Boss bonus drops reduced from 5-15 → 2-4 gold each
+- ✅ Creates strong incentive to skip levels and practice harder words!
 
-**Problem to Solve**:
-1. **AOE Issue**: Spells currently hit ALL nearby enemies instantly (too powerful)
-2. **No Visual Feedback**: Combat feels instant and weightless
-3. **Missing Element Types**: Need distinct Fire/Ice/Lightning/Arcane wizard types
+### Wizard Type Selection
+- ✅ Beautiful wizard selection dialog in MenuScene
+- ✅ 4 wizard cards with element-specific colors and descriptions
+- ✅ Fire, Ice, Lightning, Arcane wizards fully described
+- ✅ Selected wizard passed to GameScene via scene data
+- ✅ No more random selection - player chooses their style!
 
-**Refined Architecture (from DESIGN.md)**:
-
-#### New Components to Create:
-
-**1. Projectile Class** (`src/entities/Projectile.ts`)
-- Extends Phaser.GameObjects.Sprite
-- Properties:
-  - `element: 'fire' | 'ice' | 'lightning' | 'neutral'`
-  - `damage: number`
-  - `targetEnemy: Enemy`
-  - `speed: number` (pixels/second)
-  - `particleEmitter: Phaser.GameObjects.Particles.ParticleEmitter`
-- Methods:
-  - `constructor(scene, x, y, targetEnemy, element, damage)`
-  - `update(delta)` - move toward target
-  - `onCollision()` - deal damage, trigger effects, destroy
-  - `createParticleTrail()` - element-specific visual trail
-
-**2. ProjectileManager** (`src/systems/ProjectileManager.ts`)
-- Manages all active projectiles
-- Properties:
-  - `activeProjectiles: Projectile[]`
-  - `scene: Phaser.Scene`
-- Methods:
-  - `fireProjectile(source, target, element, damage)` - create new projectile
-  - `update(delta)` - update all projectiles
-  - `checkCollisions()` - detect projectile-enemy collisions
-  - `clearAll()` - cleanup on floor transition
-
-**3. Element Visual Configs** (in ProjectileManager or separate config)
-```typescript
-const ELEMENT_CONFIGS = {
-  fire: {
-    color: 0xff4500,      // Orange-red
-    particleColor: 0xff8c00,
-    trailLength: 20,
-    speed: 400,
-    damage: 1.1,          // 110% base damage
-    sprite: 'fireball',
-    trait: 'burn'         // 2 damage/sec for 3 seconds
-  },
-  ice: {
-    color: 0x00bfff,      // Deep sky blue
-    particleColor: 0x87ceeb,
-    trailLength: 15,
-    speed: 500,           // Fast projectile
-    damage: 1.0,          // 100% base damage
-    sprite: 'iceshard',
-    trait: 'slow'         // 30% chance, 50% movement reduction
-  },
-  lightning: {
-    color: 0xffff00,      // Yellow
-    particleColor: 0xffffff,
-    trailLength: 10,
-    speed: Infinity,      // Instant hit
-    damage: 0.9,          // 90% base damage
-    sprite: 'lightning',
-    trait: 'chain'        // 20% chance to hit nearby enemy
-  },
-  arcane: {
-    color: 0x9370db,      // Medium purple
-    particleColor: 0xda70d6,
-    trailLength: 15,
-    speed: 450,
-    damage: 1.0,          // 100% + complexity bonus
-    sprite: 'arcaneball',
-    trait: 'scholar'      // +5% damage per letter beyond 3
-  }
-};
-```
-
-#### Files to Modify:
-
-**1. CombatSystem.ts** (lines 156-165)
-- **BEFORE**: `this.dealDamage(targetId, totalDamage, element)` (instant damage)
-- **AFTER**: `this.emit('projectileFired', { targetId, damage, element, sourcePosition })` (deferred damage)
-- Keep `dealDamage()` as public method for projectile collision callback
-
-**2. GameScene.ts**
-- Import ProjectileManager
-- Create instance: `this.projectileManager = new ProjectileManager(this)`
-- Listen for `'projectileFired'` event from CombatSystem
-- Create projectile when event fires:
-  ```typescript
-  this.combatSystem.on('projectileFired', (data) => {
-    const target = this.enemies.find(e => e.id === data.targetId);
-    const playerPos = this.player.getPosition();
-    this.projectileManager.fireProjectile(playerPos, target, data.element, data.damage);
-  });
-  ```
-- Listen for projectile collision:
-  ```typescript
-  this.projectileManager.on('projectileHit', (data) => {
-    this.combatSystem.dealDamage(data.targetId, data.damage, data.element);
-  });
-  ```
-- Call `this.projectileManager.update(delta)` in GameScene.update()
-- Call `this.projectileManager.clearAll()` on floor transition
-
-**3. Player.ts** (optional)
-- Add `getWorldPosition()` helper method for projectile spawn point
-- Could add a "wand tip" offset for visual polish
-
-#### Implementation Steps:
-
-**Phase 1: Basic Projectile System** ✅ COMPLETE
-- [x] Add wizard element selection (random for now) at game start
-- [x] Create Projectile class with simple circle sprite
-- [x] Create ProjectileManager with basic firing/updating
-- [x] Modify CombatSystem to emit 'projectileFired' instead of instant damage
-- [x] Wire up GameScene event handlers
-- [x] Test with single enemy (no particles yet)
-
-**Phase 1 Results**:
-- ✅ Created `src/entities/Projectile.ts` (274 lines)
-- ✅ Created `src/systems/ProjectileManager.ts` (192 lines)
-- ✅ Modified `src/systems/CombatSystem.ts` (projectile events)
-- ✅ Modified `src/scenes/GameScene.ts` (wired event handlers, update loop)
-- ✅ All 4 wizard elements implemented (Fire, Ice, Lightning, Arcane)
-- ✅ TypeScript compilation passing
-- ✅ Documentation updated (DESIGN.md, CHANGELOG.md)
-
-**Phase 2: Element Visual Effects** (Partially Complete)
-- [ ] Add particle emitters to Projectile (using simple graphics currently)
-- [x] Implement ELEMENT_CONFIGS with 4 wizard types
-- [x] Create element-specific trails and colors
-- [ ] **Activate** special traits (burn DoT, slow effect, chain lightning, scholar bonus)
-  - Note: Trait system is designed and scaffolded, but effects not yet active
-  - ProjectileManager has applyElementTrait() method ready to wire up
-- [x] Test all 4 element types (visual differences confirmed)
-
-**Phase 3: Polish & Refinement**
-- [ ] Add impact effects (explosion, freeze, spark, mystical burst)
-- [ ] Add sound effects (whoosh, impact per element)
-- [ ] Combo-based visual scaling (bigger projectiles at higher combos)
-- [ ] Rune-element interactions from matrix
-
-#### Testing Checklist:
-- [ ] Single projectile fires from player to enemy
-- [ ] Projectile travels at correct speed (varies by element)
-- [ ] Damage applies on collision (not instantly)
-- [ ] Multiple projectiles don't interfere
-- [ ] Projectiles cleanup on enemy death
-- [ ] Projectiles cleanup on floor transition
-- [ ] All 4 wizard types have distinct visuals
-- [ ] Fire: Burn damage ticks correctly over time
-- [ ] Ice: Slow effect applies and wears off
-- [ ] Lightning: Instant hit and chain mechanics work
-- [ ] Arcane: Complexity bonus scales with word length
-- [ ] Counter-attacks still work after projectile change
-- [ ] Combo multiplier affects projectile visuals
+### Level Skip Feature
+- ✅ Starting floor selector added to wizard selection screen
+- ✅ Options: 1, 5, 10, 15, 20, 25, 30, 35, 40 (every 5 floors)
+- ✅ Shows reading level and gold multiplier for each floor
+- ✅ GameScene initializes with selected starting floor
+- ✅ Encourages advancing readers to challenge themselves!
 
 ---
 
-## 📋 REMAINING TASKS (from ERINS_FEEDBACK_TODOS.md)
+## 📋 LOW PRIORITY - Polish & Nice-to-Have Features
 
-### Low Priority (Polish & Features)
+### Item #16: Wand Charging Visual Feedback
+**Status**: Not Started
+**Priority**: LOW
+**Description**: Animated wand effects for spell combos (1-5 words)
+- 1 word: Glowing ball at wand tip
+- 2 words: Sparkling ball
+- 3 words: Energy crackling
+- 4 words: Pulsing energy + particles
+- 5 words: Strong pulsing + warping space
 
-**Item #16: Wand Charging Visual Feedback**
-- Status: Not Started
-- Effort: High
-- Description: Animated wand effects for spell combos (1-5 words)
-
-**Item #18: Enemy Drops System**
-- Status: Not Started
-- Effort: Medium
-- Description: Health potions, food items (1/10 drop chance)
-
-**Item #19: Rune System**
-- Status: Not Started
-- Effort: High
-- Description: Multi-shot, lifesteal runes (increase max combo words)
-
-**Item #20: Game-Over Screen Polish**
-- Status: Not Started
-- Effort: Medium
-- Description: Stats display, particle effects, tombstone
-
-### Research
-
-**Item #22: Boss Room A* Distance**
-- Status: Not Started
-- Effort: Medium
-- Description: Investigate if Manhattan distance is sufficient for boss placement
+**Effort**: High (new animation system + visual assets)
+**Files**: New animation system, `src/components/CastingDialog.ts`
 
 ---
 
-## 🎯 IMMEDIATE NEXT STEPS
+### Item #18: Enhanced Enemy Drops System
+**Status**: PARTIALLY COMPLETE (Basic system implemented, needs tuning)
+**Priority**: MEDIUM
+**Description**: Loot drop system with consumables, runes, and gold
 
-1. **Continue Projectile System** (Item #17)
-   - ✅ Phase 1 complete (basic projectile system)
-   - ⏳ Phase 2: Activate element trait effects
-   - 🔜 Phase 3: Advanced visual polish
+**What's Done**:
+- ✅ Basic DropManager implemented
+- ✅ Gold auto-collection with magnetism
+- ✅ Consumables and runes defined
+- ✅ Drop spawning from enemy deaths
+- ✅ Floor-based gold scaling
 
-2. **Playtesting Session**
-   - Test projectile system in-game (visual behavior, collision detection)
-   - Test all 15 completed items together
-   - Verify no regressions from projectile changes
-   - Get fresh user feedback
+**What's Needed**:
+- [ ] Integrate drops with actual inventory system (currently placeholder)
+- [ ] Connect player gold tracking (currently logs only)
+- [ ] Add proper sprites for consumables and runes (currently colored circles)
+- [ ] Implement first-time reading gate UI (currently uses alert())
+- [ ] Balance drop rates based on playtest feedback
+- [ ] Add sound effects for pickups
 
-3. **Consider Remaining Polish Items**
-   - Items #16, #18, #19, #20 are nice-to-have
-   - Projectile system is more impactful (Phase 1 done!)
+**Files**: `src/systems/DropManager.ts`, `src/types/drops.ts`
 
 ---
 
-## 📝 NOTES
+### Item #19: Rune System
+**Status**: SCAFFOLDED (types defined, not wired up)
+**Priority**: MEDIUM
+**Description**: Equipment augmentation with prefix/suffix/core runes
 
-### Current Context
-- Just completed Item #17 Phase 1: Basic projectile system with 4 wizard elements
-- Fixed major AOE problem (spells no longer hit ALL enemies instantly)
-- Added visual feedback (element-colored projectiles with trails and impacts)
-- All critical/high/medium priority items are done except Item #17 Phases 2-3
-- Game is highly polished and playable
-- Next: Activate special element traits (burn, slow, chain, scholar)
+**What's Done**:
+- ✅ Rune types defined in drops.ts
+- ✅ Rune templates created (Flame, Ice, Big, Blast, Heal, Shield, Echo, Power)
+- ✅ Drop system can spawn runes
 
-### Design Decisions Confirmed
-- 40 floors total (transition levels every other floor)
-- Boss on every floor (not every 5th)
-- Monster counter-attacks after spell cast
-- Spell limit: 2 words (can grow with runes)
-- Timer disabled for floors 1-10 (tries mode)
+**What's Needed**:
+- [ ] Equipment screen UI (Tab key to open)
+- [ ] 3 rune slots: Prefix | Core | Suffix
+- [ ] Rune effects integration with combat system
+- [ ] Rune stacking/leveling (Flame I → Flame II → Flame III)
+- [ ] Visual feedback for equipped runes
+- [ ] TTS support for rune names
 
-### Architecture Notes
-- CombatSystem handles damage calculation
-- GameScene handles visual effects and entity management
-- Projectiles bridge the gap between calculation and visual
+**Files**: New `src/systems/RuneSystem.ts`, `src/scenes/EquipmentScene.ts`
+
+---
+
+### Item #20: Game-Over Screen Polish
+**Status**: BASIC IMPLEMENTATION (needs enhancement)
+**Priority**: LOW
+**Description**: Enhanced game-over experience with stats
+
+**Current State**:
+- ✅ Full-screen overlay
+- ✅ "GAME OVER" text
+- ✅ Return to Menu button
+
+**What's Needed**:
+- [ ] Particle effects (snowflakes or falling leaves)
+- [ ] Tombstone with flowers graphic (kid-friendly)
+- [ ] Stats display:
+  - Points earned
+  - Words read
+  - Floors reached
+  - Enemies defeated
+  - Time played
+- [ ] Achievement notifications (if any unlocked)
+
+**Files**: `src/scenes/GameScene.ts` (game over handler)
+
+---
+
+### Item #21: Bigger Maps & Room Distribution
+**Status**: PARTIALLY ADDRESSED (40 floors now, but room distribution may need tuning)
+**Priority**: LOW
+**Description**: Adjust dungeon generation for better gameplay flow
+
+**Current State**:
+- Room sizes: Min 5x5, Max 8x8
+- Combat rooms: Most common
+- Treasure/Shop rooms: Less common
+
+**Tuning Needed** (based on playtesting):
+- [ ] Verify room distribution feels right (80% combat, 10% treasure, 10% shop)
+- [ ] Consider increasing dungeon size for higher floors
+- [ ] Add mini-boss rooms? (Optional elite enemies)
+
+**Files**: `src/systems/DungeonGenerator.ts`
+
+---
+
+## 🔬 RESEARCH / INVESTIGATION
+
+### Item #22: Boss Room Distance Calculation
+**Status**: Not Investigated
+**Priority**: LOW
+**Description**: Determine if Manhattan distance is sufficient or if A* pathfinding needed
+
+**Current Implementation**:
+- Boss placement uses Manhattan distance with 90% probability decay
+- Guarantees boss in farthest room or fallback
+
+**Research Questions**:
+- Does Manhattan distance create issues with unreachable boss rooms?
+- Would A* pathfinding improve player experience?
+- Is current implementation "good enough"?
+
+**Action**:
+- Playtest 20+ runs and track boss accessibility
+- Log actual player path length to boss vs Manhattan distance
+- Decide if A* is worth the complexity
+
+**Files**: `src/systems/DungeonGenerator.ts`, potential new pathfinding utility
+
+---
+
+## 🧪 TESTING & QA
+
+### Manual Testing Checklist
+- [ ] Test wizard selection on all 4 types (fire, ice, lightning, arcane)
+- [ ] Test level skip: Floor 1, 5, 10, 20, 40
+- [ ] Verify gold drops scale correctly with floor
+- [ ] Verify starting floor affects enemy difficulty appropriately
+- [ ] Test 1366x768 Chromebook display (viewport scaling)
+- [ ] Verify HP/MP readable from 3 feet away
+- [ ] Test word repeats across 10 combat encounters
+- [ ] Boss difficulty feels 4-5x harder than normal enemies
+- [ ] Timer only appears on floors 11+ (not 1-10)
+
+### Performance Testing
+- [ ] Monitor FPS on low-end devices
+- [ ] Check memory leaks (run for 30+ minutes)
+- [ ] Verify cleanup on floor transitions
+- [ ] Test with 100+ projectiles on screen
+
+---
+
+## 🎯 FUTURE ENHANCEMENTS (Post-Launch)
+
+### Planned for Future Sprints
+- [ ] Shop system integration (buy consumables with gold)
+- [ ] Inventory hot-bar (number keys 1-4 to use items)
+- [ ] Sound effects and music system
+- [ ] More enemy types (current: 6 types)
+- [ ] More boss mechanics (current: basic stat scaling)
+- [ ] Achievement system
+- [ ] Leaderboards / score tracking
+- [ ] Multiplayer co-op? (far future)
+
+---
+
+## 📊 SPRINT METRICS
+
+**Previous Sprint Accomplishments** (from archived CHANGELOG):
+- 15 critical/high/medium priority items completed
+- Projectile system (3 phases)
+- Loot drop system (Phase 1)
+- Anti-cheat measures (2 rounds)
+- Boss behavior improvements
+- 96 unit tests (83 passed, 13 skipped)
+
+**Current Sprint Goals**:
+- Polish wizard selection and level skip features
+- Tune gold economy based on playtesting
+- Complete loot system integration
+- Begin rune system implementation
+- Comprehensive manual testing
 
 ---
 
 ## 🔗 RELATED FILES
 
-**Word Lists**:
-- `src/data/words/level-01.txt` through `level-20.txt`
-- `tools/audit-word-lists.js` (run with: `node tools/audit-word-lists.js`)
+**Design Documents**:
+- `DESIGN.md` - Complete game design specifications
+- `ASSETS_DESIGN.md` - Art asset requirements
+- `ChangeLogs/CHANGELOG_10_25_2025.md` - Archived previous sprint work
 
-**Combat System**:
-- `src/systems/CombatSystem.ts` (damage calculation, combo, elements)
-- `src/scenes/GameScene.ts` (combat orchestration, 2552 lines)
-- `src/entities/Player.ts` (player entity)
-- `src/entities/Enemy.ts` (enemy entity)
+**Core Systems**:
+- `src/scenes/MenuScene.ts` - Main menu + wizard selection
+- `src/scenes/GameScene.ts` - Core gameplay (2800+ lines)
+- `src/systems/DropManager.ts` - Loot drop system
+- `src/systems/ProjectileManager.ts` - Spell projectiles + element effects
+- `src/systems/CombatSystem.ts` - Damage, combos, counter-attacks
 
-**Projectile System** ✅:
-- `src/entities/Projectile.ts` (274 lines - created in Phase 1)
-- `src/systems/ProjectileManager.ts` (192 lines - created in Phase 1)
-
-**Reference**:
-- `ERINS_FEEDBACK_TODOS.md` (full priority list)
-- `CHANGELOG.md` (implementation history)
-- `DESIGN.md` (game design decisions)
+**Data Files**:
+- `src/types/drops.ts` - Loot tables, consumables, runes
+- `src/data/words/level-*.txt` - Curriculum word lists (20 levels)
 
 ---
 
-*Ready to continue: Start with Projectile class implementation (Phase 1)*
+## 📝 NOTES
+
+### Development Context
+- Game is very polished after previous sprint!
+- 40 floors (2 per reading level, K-10th grade)
+- Boss on every floor (not just every 5th)
+- Transition levels for smooth difficulty curve
+- 100% Dolch Pre-Primer coverage in word lists
+- All critical bugs fixed (spacebar spam, collision, etc.)
+
+### Next Session Priorities
+1. **Playtest** wizard selection + level skip
+2. **Tune** gold economy based on feel
+3. **Integrate** drop system with inventory
+4. **Start** rune system implementation
+
+---
+
+*Last Updated*: October 25, 2025
+*Sprint Start*: October 25, 2025
+*Target Completion*: TBD

@@ -287,56 +287,67 @@ export const RUNE_TEMPLATES: Record<string, Omit<RuneData, 'spriteKey' | 'level'
 
 /**
  * Enemy drop tables defining what each enemy type can drop
+ *
+ * IMPORTANT: Gold values are BASE values for Floor 1-2.
+ * Actual gold drops scale with floor level using formula:
+ * finalGold = baseGold * (1 + floor * 0.15)
+ *
+ * Floor 1: 1x base (cheap Dragon Warrior economy)
+ * Floor 10: 2.35x base (gradual scaling)
+ * Floor 20: 3.85x base (mid-game)
+ * Floor 40: 7x base (end-game reward)
+ *
+ * This creates incentive to skip levels and push to harder words!
  */
 export const ENEMY_DROP_TABLES: Record<string, EnemyDropConfig> = {
   goblin: {
     enemyType: 'goblin',
-    goldBase: { min: 3, max: 5 },
+    goldBase: { min: 1, max: 2 },  // Was 3-5, now scales with floor
     consumableChance: 0.15,
     runeChance: 0.03,
     specialBehavior: 'Fast gold magnet',
   },
   bat: {
     enemyType: 'bat',
-    goldBase: { min: 2, max: 4 },
+    goldBase: { min: 1, max: 1 },  // Was 2-4, weakest enemy
     consumableChance: 0.10,
     runeChance: 0.02,
     specialBehavior: 'Small burst radius',
   },
   skeleton: {
     enemyType: 'skeleton',
-    goldBase: { min: 4, max: 6 },
+    goldBase: { min: 1, max: 2 },  // Was 4-6, now balanced
     consumableChance: 0.20,
     runeChance: 0.05,
     specialBehavior: '+Bread chance',
   },
   slime: {
     enemyType: 'slime',
-    goldBase: { min: 3, max: 5 },
+    goldBase: { min: 1, max: 2 },  // Was 3-5, now consistent
     consumableChance: 0.25,
     runeChance: 0.03,
     specialBehavior: '+Potion chance',
   },
   orc: {
     enemyType: 'orc',
-    goldBase: { min: 6, max: 8 },
+    goldBase: { min: 2, max: 3 },  // Was 6-8, stronger enemy
     consumableChance: 0.20,
     runeChance: 0.07,
     specialBehavior: '+Rune chance',
   },
   demon: {
     enemyType: 'demon',
-    goldBase: { min: 8, max: 12 },
+    goldBase: { min: 3, max: 4 },  // Was 8-12, toughest regular enemy
     consumableChance: 0.30,
     runeChance: 0.10,
     specialBehavior: 'Guaranteed rare+',
   },
   boss: {
     enemyType: 'boss',
-    goldBase: { min: 20, max: 30 },
+    goldBase: { min: 8, max: 12 },  // Was 20-30, still rewarding but not crazy
     consumableChance: 1.0, // 100% guaranteed
     runeChance: 0.5, // 50% chance
     isBoss: true,
-    specialBehavior: '3-5 guaranteed items',
+    specialBehavior: '3-5 bonus drops (reduced from 5-15 to 2-4 gold each)',
   },
 };
